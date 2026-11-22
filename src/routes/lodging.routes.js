@@ -1,0 +1,2 @@
+const router=require('express').Router(); const asyncHandler=require('../utils/asyncHandler'); const c=require('../controllers/lodging.controller'); const auth=require('../middlewares/auth');
+router.use(auth); router.get('/huespedes',asyncHandler(c.huespedes)); router.post('/huespedes',asyncHandler(c.crearHuesped)); router.get('/estadias',asyncHandler(c.estadias)); router.post('/estadias',asyncHandler(c.crearEstadia)); module.exports=router;

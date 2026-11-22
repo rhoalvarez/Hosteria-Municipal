@@ -1,0 +1,2 @@
+const router=require('express').Router(); const asyncHandler=require('../utils/asyncHandler'); const c=require('../controllers/restaurant.controller'); const auth=require('../middlewares/auth');
+router.use(auth); router.get('/comandas/abiertas',asyncHandler(c.comandasAbiertas)); router.post('/comandas',asyncHandler(c.abrirComanda)); router.post('/comandas/:id/pedidos',asyncHandler(c.crearPedido)); router.get('/pedidos/:id',asyncHandler(c.detallePedido)); router.patch('/pedidos/:id/estado',asyncHandler(c.estadoPedido)); module.exports=router;

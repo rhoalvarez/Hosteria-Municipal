@@ -1,0 +1,2 @@
+const router=require('express').Router(); const asyncHandler=require('../utils/asyncHandler'); const c=require('../controllers/cash.controller'); const auth=require('../middlewares/auth'); const roles=require('../middlewares/roles');
+router.use(auth); router.post('/turnos/apertura',roles('ADMIN','CAJERO'),asyncHandler(c.abrirCaja)); router.post('/turnos/:id/cierre',roles('ADMIN','CAJERO'),asyncHandler(c.cerrarCaja)); router.post('/comandas/:id/cobros',roles('ADMIN','CAJERO'),asyncHandler(c.cobrarComanda)); module.exports=router;
