@@ -1,2 +1,12 @@
-const router=require('express').Router(); const asyncHandler=require('../utils/asyncHandler'); const c=require('../controllers/auth.controller');
-router.post('/login',asyncHandler(c.login)); router.post('/setup/admin',asyncHandler(c.setupAdmin)); module.exports=router;
+const router = require('express').Router();
+
+const asyncHandler = require('../utils/asyncHandler');
+const authController = require('../controllers/auth.controller');
+
+// Inicio de sesión
+router.post('/login', asyncHandler(authController.login));
+
+// Crear el primer ENCARGADO del sistema
+router.post('/setup/admin', asyncHandler(authController.setupAdmin));
+
+module.exports = router;

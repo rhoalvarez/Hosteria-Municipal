@@ -1,2 +1,36 @@
-const router=require('express').Router(); const asyncHandler=require('../utils/asyncHandler'); const c=require('../controllers/lodging.controller'); const auth=require('../middlewares/auth');
-router.use(auth); router.get('/huespedes',asyncHandler(c.huespedes)); router.post('/huespedes',asyncHandler(c.crearHuesped)); router.get('/estadias',asyncHandler(c.estadias)); router.post('/estadias',asyncHandler(c.crearEstadia)); module.exports=router;
+const router = require("express").Router();
+
+const asyncHandler = require("../utils/asyncHandler");
+const c = require("../controllers/lodging.controller");
+const auth = require("../middlewares/auth");
+const roles = require("../middlewares/roles");
+
+router.use(auth);
+
+// Huéspedes
+router.get(
+  "/huespedes",
+  roles("ENCARGADO"),
+  asyncHandler(c.huespedes)
+);
+
+router.post(
+  "/huespedes",
+  roles("ENCARGADO"),
+  asyncHandler(c.crearHuesped)
+);
+
+// Estadías
+router.get(
+  "/estadias",
+  roles("ENCARGADO"),
+  asyncHandler(c.estadias)
+);
+
+router.post(
+  "/estadias",
+  roles("ENCARGADO"),
+  asyncHandler(c.crearEstadia)
+);
+
+module.exports = router;
