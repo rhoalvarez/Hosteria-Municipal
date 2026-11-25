@@ -17,7 +17,9 @@
    formato que esperan las pantallas. Si mañana cambia un nombre
    en el backend, se corrige en UN solo lugar: este archivo.
 
-   Necesita que sesion.js esté cargado antes (usa obtenerSesion).
+   sesion.js es OPCIONAL: las pantallas del personal lo cargan
+   antes que este archivo; la pantalla del cliente (QR) no lo
+   carga, porque el cliente no inicia sesión.
    ========================================================= */
 
 // ⚠️ Antes de instalar en la hostería tiene que estar en false
@@ -36,6 +38,12 @@ const API_URL = location.port === '5500'
 
 const DEMORA_MOCK = 300;           // ms, para simular la red
 const CLAVE_MOCK = 'rest_mock_db'; // dónde guardamos la "base" simulada
+
+// Códigos QR de PRUEBA para el mock: prueba01, prueba02... prueba12.
+// En la base real son códigos al azar (columna rest_mesa.codigo_qr).
+function codigoQrPrueba(numero) {
+  return 'prueba' + String(numero).padStart(2, '0');
+}
 
 /* ---------------------------------------------------------
    DATOS SIMULADOS
@@ -59,8 +67,8 @@ const DATOS_INICIALES = {
     { codigo: 'D', nombre: 'Desayunos y cafetería' }
   ],
   menu: [
-    { id: 1, codigo: 'A01', nombre: 'Milanesa con papas fritas', categoria: 'A', precio: 9500, disponible: true, activo: true },
-    { id: 2, codigo: 'A02', nombre: 'Empanadas (docena)',        categoria: 'A', precio: 12000, disponible: true, activo: true },
+    { id: 1, codigo: 'A01', nombre: 'Milanesa con papas fritas', categoria: 'A', precio: 9500, disponible: true, activo: true, descripcion: 'Milanesa de carne con papas fritas caseras' },
+    { id: 2, codigo: 'A02', nombre: 'Empanadas (docena)',        categoria: 'A', precio: 12000, disponible: true, activo: true, descripcion: 'De carne, fritas o al horno' },
     { id: 3, codigo: 'A03', nombre: 'Locro',                     categoria: 'A', precio: 8000, disponible: true, activo: true },
     { id: 4, codigo: 'A04', nombre: 'Cabrito al horno',          categoria: 'A', precio: 15000, disponible: false, activo: true },
     { id: 5, codigo: 'B01', nombre: 'Agua mineral 500 ml',       categoria: 'B', precio: 1500, disponible: true, activo: true },
@@ -70,10 +78,18 @@ const DATOS_INICIALES = {
     { id: 9, codigo: 'D02', nombre: 'Tostado de jamón y queso',  categoria: 'D', precio: 3500, disponible: true, activo: true }
   ],
   // 12 mesas, como en el Excel actual (a confirmar con la hostería)
-  mesas: Array.from({ length: 12 }, (_, i) => ({ id: i + 1, numero: i + 1, estado: 'libre' })),
+  mesas: Array.from({ length: 12 }, (_, i) => ({
+    id: i + 1,
+    numero: i + 1,
+    estado: 'libre',
+    codigo_qr: codigoQrPrueba(i + 1)
+  })),
   pedidos: [],
   ultimoIdPedido: 0,
-  ultimoIdPlato: 9
+  ultimoIdPlato: 9,
+  // Bandeja de pedidos QR (en la base: rest_pedido_qr)
+  pedidosQr: [],
+  ultimoIdPedidoQr: 0
 };
 
 /* ---------------------------------------------------------
@@ -89,11 +105,36 @@ function copiar(objeto) {
 function leerMock() {
   try {
     const texto = localStorage.getItem(CLAVE_MOCK);
-    if (texto) return JSON.parse(texto);
+    if (texto) {
+      const db = JSON.parse(texto);
+      completarMock(db);
+      return db;
+    }
   } catch (e) { /* si falla, arrancamos de cero */ }
   const nueva = copiar(DATOS_INICIALES);
   guardarMock(nueva);
   return nueva;
+}
+
+/* Si el navegador tiene guardado un mock VIEJO (de antes del Inc. 2),
+   le agregamos lo que le falta para el QR sin borrar lo que había. */
+function completarMock(db) {
+  let cambio = false;
+  if (!Array.isArray(db.pedidosQr)) {
+    db.pedidosQr = [];
+    cambio = true;
+  }
+  if (typeof db.ultimoIdPedidoQr !== 'number') {
+    db.ultimoIdPedidoQr = 0;
+    cambio = true;
+  }
+  (db.mesas || []).forEach(m => {
+    if (!m.codigo_qr) {
+      m.codigo_qr = codigoQrPrueba(m.numero);
+      cambio = true;
+    }
+  });
+  if (cambio) guardarMock(db);
 }
 
 function guardarMock(db) {
@@ -121,9 +162,16 @@ function errorApi(mensaje, estado) {
   return error;
 }
 
+/* Sesión actual, o null si no hay.
+   La pantalla del cliente (QR) no carga sesion.js, así que primero
+   nos fijamos si la función obtenerSesion existe. */
+function sesionActual() {
+  return typeof obtenerSesion === 'function' ? obtenerSesion() : null;
+}
+
 // Usuario actual (para saber qué mozo hace el pedido)
 function usuarioActual() {
-  const sesion = obtenerSesion();
+  const sesion = sesionActual();
   return sesion ? sesion.usuario : null;
 }
 
@@ -137,7 +185,7 @@ async function peticion(metodo, ruta, cuerpo) {
     headers: { 'Content-Type': 'application/json' }
   };
 
-  const sesion = obtenerSesion();
+  const sesion = sesionActual();
   if (sesion && sesion.token) {
     opciones.headers['Authorization'] = 'Bearer ' + sesion.token;
   }
@@ -213,9 +261,17 @@ function adaptarPlato(p, categorias) {
   };
 }
 
-// { id_mesa, numero, estado: 'CUENTA_PEDIDA' } → { id, numero, estado: 'cuenta_pedida' }
+// { id_mesa, numero, estado: 'CUENTA_PEDIDA', pedidos_qr }
+//   → { id, numero, estado: 'cuenta_pedida', pedidos_qr }
+// pedidos_qr = cuántos pedidos QR esperan al mozo (0 si el backend
+// todavía no lo manda: así no se rompe nada mientras tanto).
 function adaptarMesa(m) {
-  return { id: m.id_mesa, numero: m.numero, estado: aMinuscula(m.estado) };
+  return {
+    id: m.id_mesa,
+    numero: m.numero,
+    estado: aMinuscula(m.estado),
+    pedidos_qr: Number(m.pedidos_qr || 0)
+  };
 }
 
 /* El backend devuelve los pedidos "aplanados": UNA FILA POR ÍTEM
@@ -333,6 +389,7 @@ async function login(usuario, clave) {
 
 /* ---------- MESAS (RF-MES) ---------- */
 // Estados de mesa: libre | ocupada | cuenta_pedida
+// Cada mesa trae además pedidos_qr: cuántos pedidos QR esperan al mozo.
 
 async function obtenerMesas() {
   if (!USAR_MOCK) {
@@ -343,7 +400,11 @@ async function obtenerMesas() {
   }
 
   await esperar(DEMORA_MOCK);
-  return leerMock().mesas;
+  const db = leerMock();
+  return db.mesas.map(m => ({
+    ...m,
+    pedidos_qr: db.pedidosQr.filter(q => q.mesa_id === m.id && q.estado === 'por_confirmar').length
+  }));
 }
 
 /* El único cambio de estado que hace el mozo es "pedir la cuenta".
@@ -588,7 +649,9 @@ async function cambiarDisponibilidad(idPlato, disponible) {
 }
 
 /* ---------- PEDIDOS (RF-PED) y COCINA (RF-COC) ---------- */
-// Estados: por_confirmar (solo QR) | pendiente | en_preparacion | listo
+// Estados de un pedido: pendiente | en_preparacion | listo
+// (los pedidos QR sin confirmar NO están acá: viven en la bandeja,
+//  ver la sección PEDIDO POR QR más abajo)
 
 /* datos = { mesa_id, personas, items: [ { menu_id, cantidad, observaciones } ] }
    El precio NO lo manda el frontend: lo pone el backend desde el
@@ -752,4 +815,336 @@ async function marcarPedidoListo(idPedido) {
   pedido.estado = 'listo';
   guardarMock(db);
   return pedido;
+}
+
+/* =========================================================
+   PEDIDO POR QR (RF-QR) — Incremento 2
+   ---------------------------------------------------------
+   Cómo funciona:
+   1. El cliente escanea el QR de la mesa: abre qr.html?c=CODIGO.
+      CODIGO es rest_mesa.codigo_qr (al azar, NO el número de mesa:
+      si fuera el número, cualquiera lo cambia y pide para otra mesa).
+   2. El cliente arma el pedido y lo envía SIN usuario. El pedido
+      queda en una BANDEJA aparte (rest_pedido_qr) "por confirmar".
+      Cocina NO lo ve: no está en rest_pedido.
+   3. El mozo ve el aviso en la tarjeta de la mesa y lo confirma
+      (si la mesa está libre, carga las personas) o lo descarta.
+      Al confirmar, el backend lo pasa a una comanda y pedido reales
+      con los mismos procedimientos del Inc. 1 → recién ahí va a cocina.
+
+   Estados de la bandeja: por_confirmar | confirmado | descartado
+   (nunca se borra: queda el registro, RNF-BD-05)
+   ========================================================= */
+
+// Las mismas reglas que el pedido del mozo (y que el backend)
+const CANTIDAD_MAX_QR = 50;
+const LARGO_MAX_OBS_QR = 100;
+const PERSONAS_MAX = 20;
+
+// Copia SOLO los campos permitidos de cada ítem y los ordena
+// (igual que limpiarPlato: nadie puede colar un precio por acá)
+function limpiarItemsQr(items) {
+  return (Array.isArray(items) ? items : []).map(i => ({
+    menu_id: Number(i.menu_id),
+    cantidad: Number(i.cantidad),
+    observaciones: String(i.observaciones || '').trim()
+  }));
+}
+
+// Validaciones del pedido del cliente (400 = datos mal).
+// La pantalla también las usa, pero la seguridad real es el backend.
+function validarItemsQr(items) {
+  if (items.length === 0) {
+    throw errorApi('Tu pedido está vacío: agregá al menos un plato', 400);
+  }
+  for (const i of items) {
+    if (!Number.isInteger(i.menu_id) || i.menu_id < 1) {
+      throw errorApi('Hay un plato inválido en el pedido', 400);
+    }
+    if (!Number.isInteger(i.cantidad) || i.cantidad < 1 || i.cantidad > CANTIDAD_MAX_QR) {
+      throw errorApi('La cantidad de cada plato tiene que ser entre 1 y ' + CANTIDAD_MAX_QR, 400);
+    }
+    if (i.observaciones.length > LARGO_MAX_OBS_QR) {
+      throw errorApi('Las observaciones pueden tener hasta ' + LARGO_MAX_OBS_QR + ' letras', 400);
+    }
+  }
+}
+
+// Mock: busca la mesa por su código QR (404 si no existe)
+function mesaPorCodigoMock(db, codigo) {
+  const mesa = db.mesas.find(m => m.codigo_qr === codigo);
+  if (!mesa) throw errorApi('Este código QR no es válido. Pedile ayuda al mozo.', 404);
+  return mesa;
+}
+
+// Plato para el CLIENTE: sin "activo" (solo ve los activos)
+// y con descripción (RF-QR-02)
+function adaptarPlatoQr(p, categorias) {
+  const plato = adaptarPlato(p, categorias);
+  return {
+    id: plato.id,
+    codigo: plato.codigo,
+    nombre: plato.nombre,
+    descripcion: p.descripcion || '',
+    categoria: plato.categoria,
+    precio: plato.precio,
+    disponible: plato.disponible
+  };
+}
+
+/* Bandeja del mozo: el backend manda UNA FILA POR ÍTEM, como los
+   otros pedidos. Nombres supuestos (a confirmar con Rosario):
+   { id_pedido_qr, id_mesa, mesa_numero, mesa_libre (0/1), creado,
+     id_item, codigo, nombre, precio, cantidad, observaciones }
+   Si Rosario usa otros nombres, se corrige SOLO acá. */
+function agruparPedidosQr(filas) {
+  const pedidos = [];
+  const porId = new Map();
+
+  for (const f of filas) {
+    let pedido = porId.get(f.id_pedido_qr);
+    if (!pedido) {
+      pedido = {
+        id: f.id_pedido_qr,
+        mesa_id: f.id_mesa,
+        mesa_numero: f.mesa_numero,
+        mesa_libre: aBooleano(f.mesa_libre),
+        creado_en: f.creado,
+        items: []
+      };
+      porId.set(f.id_pedido_qr, pedido);
+      pedidos.push(pedido);
+    }
+    if (f.id_item !== null && f.id_item !== undefined) {
+      pedido.items.push({
+        menu_id: f.id_item,
+        codigo: f.codigo || '',
+        nombre: f.nombre || f.articulo || '',
+        cantidad: Number(f.cantidad),
+        observaciones: f.observaciones || '',
+        precio: Number(f.precio) // precio ACTUAL del menú (el definitivo lo pone el backend al confirmar)
+      });
+    }
+  }
+  return pedidos;
+}
+
+/* ---------- Para el CLIENTE (sin usuario) ---------- */
+
+/* Menú de la mesa del QR.
+   Devuelve { mesa: { numero }, categorias: [{ codigo, nombre }],
+              menu: [{ id, codigo, nombre, descripcion, categoria, precio, disponible }] }
+   Las categorías vienen en la misma respuesta porque GET /categorias
+   pide token, y el cliente no tiene. */
+async function obtenerMenuQr(codigo) {
+  if (!USAR_MOCK) {
+    const r = await peticion('GET', '/qr/' + encodeURIComponent(codigo) + '/menu');
+    const categorias = r.categorias || [];
+    return {
+      mesa: { numero: r.mesa.numero },
+      categorias: categorias
+        .filter(c => c.activa === undefined || aBooleano(c.activa))
+        .map(adaptarCategoria)
+        .sort((a, b) => a.codigo.localeCompare(b.codigo)),
+      menu: (r.menu || []).map(p => adaptarPlatoQr(p, categorias))
+    };
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  const mesa = mesaPorCodigoMock(db, codigo);
+  return {
+    mesa: { numero: mesa.numero },
+    categorias: copiar(db.categorias),
+    menu: db.menu
+      .filter(p => p.activo)
+      .map(p => ({
+        id: p.id,
+        codigo: p.codigo,
+        nombre: p.nombre,
+        descripcion: p.descripcion || '',
+        categoria: p.categoria,
+        precio: p.precio,
+        disponible: p.disponible
+      }))
+  };
+}
+
+/* El cliente envía su pedido.
+   datos = { uid, items: [ { menu_id, cantidad, observaciones } ] }
+   El uid lo genera la pantalla UNA vez por pedido y lo reusa si
+   reintenta (por ejemplo, si se cortó el wifi): así el backend
+   no lo guarda dos veces.
+   Devuelve { id } (id de la bandeja). */
+async function enviarPedidoQr(codigo, datos) {
+  const items = limpiarItemsQr(datos.items);
+  validarItemsQr(items);
+  if (!datos.uid) throw errorApi('Falta el identificador del envío', 400);
+
+  if (!USAR_MOCK) {
+    const r = await peticion('POST', '/qr/' + encodeURIComponent(codigo) + '/pedidos', {
+      uid: datos.uid,
+      items: items.map(i => ({
+        id_item: i.menu_id,
+        cantidad: i.cantidad,
+        observaciones: i.observaciones
+      }))
+    });
+    return { id: r.id_pedido_qr };
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  const mesa = mesaPorCodigoMock(db, codigo);
+
+  // Mismo uid que uno ya guardado = es un reintento: devolvemos el mismo
+  const repetido = db.pedidosQr.find(q => q.uid === datos.uid);
+  if (repetido) return { id: repetido.id };
+
+  if (mesa.estado === 'cuenta_pedida') {
+    throw errorApi('La cuenta de esta mesa ya fue pedida. Llamá al mozo.', 409);
+  }
+  // Uno solo esperando por mesa (en la base: mesa_esperando UNIQUE)
+  const esperando = db.pedidosQr.find(q => q.mesa_id === mesa.id && q.estado === 'por_confirmar');
+  if (esperando) {
+    throw errorApi('Ya hay un pedido de esta mesa esperando al mozo. Cuando lo confirme vas a poder pedir de nuevo.', 409);
+  }
+
+  for (const item of items) {
+    const plato = db.menu.find(p => p.id === item.menu_id && p.activo);
+    if (!plato) throw errorApi('Un plato del pedido ya no está en el menú', 400);
+    if (!plato.disponible) throw errorApi(plato.nombre + ' está agotado', 409);
+  }
+
+  // En la bandeja NO guardamos precio: lo pone el pedido real al confirmar
+  db.ultimoIdPedidoQr++;
+  const nuevo = {
+    id: db.ultimoIdPedidoQr,
+    uid: datos.uid,
+    mesa_id: mesa.id,
+    estado: 'por_confirmar',
+    creado_en: new Date().toISOString(),
+    resuelto_en: null,
+    id_usuario_resuelve: null,
+    id_pedido: null,
+    items
+  };
+  db.pedidosQr.push(nuevo);
+  guardarMock(db);
+  return { id: nuevo.id };
+}
+
+/* ---------- Para el MOZO (con sesión) ---------- */
+
+/* Pedidos QR que esperan al mozo, del más viejo al más nuevo.
+   Cada uno: { id, mesa_id, mesa_numero, mesa_libre, creado_en,
+               items: [{ menu_id, codigo, nombre, cantidad, observaciones, precio }] }
+   mesa_libre = true → al confirmar hay que pedir las personas. */
+async function obtenerPedidosQr() {
+  if (!USAR_MOCK) {
+    const filas = await peticion('GET', '/pedidos-qr');
+    return agruparPedidosQr(filas);
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  return db.pedidosQr
+    .filter(q => q.estado === 'por_confirmar')
+    .sort((a, b) => a.creado_en.localeCompare(b.creado_en))
+    .map(q => {
+      const mesa = db.mesas.find(m => m.id === q.mesa_id);
+      return {
+        id: q.id,
+        mesa_id: q.mesa_id,
+        mesa_numero: mesa ? mesa.numero : '?',
+        mesa_libre: mesa ? mesa.estado === 'libre' : false,
+        creado_en: q.creado_en,
+        items: q.items.map(i => {
+          const plato = db.menu.find(p => p.id === i.menu_id) || {};
+          return {
+            menu_id: i.menu_id,
+            codigo: plato.codigo || '',
+            nombre: plato.nombre || '',
+            cantidad: i.cantidad,
+            observaciones: i.observaciones,
+            precio: plato.precio || 0
+          };
+        })
+      };
+    });
+}
+
+/* El mozo confirma: el pedido pasa a la comanda y va a cocina.
+   personas: OBLIGATORIO solo si la mesa está libre (1 a 20).
+   409 si otro mozo ya lo confirmó o lo descartó.
+   Si un plato se agotó mientras tanto, da error y el pedido
+   SIGUE en la bandeja (el mozo ve qué pasó). */
+async function confirmarPedidoQr(idPedidoQr, personas) {
+  if (!USAR_MOCK) {
+    const cuerpo = personas ? { personas: Number(personas) } : {};
+    const r = await peticion('POST', '/pedidos-qr/' + idPedidoQr + '/confirmar', cuerpo);
+    return { id_comanda: r.id_comanda, id_pedido: r.id_pedido };
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  const q = db.pedidosQr.find(p => p.id === idPedidoQr);
+  if (!q || q.estado !== 'por_confirmar') {
+    throw errorApi('Este pedido ya fue confirmado o descartado por otro mozo', 409);
+  }
+  const mesa = db.mesas.find(m => m.id === q.mesa_id);
+  if (!mesa) throw errorApi('La mesa no existe', 404);
+  if (mesa.estado === 'cuenta_pedida') {
+    throw errorApi('La cuenta de la Mesa ' + mesa.numero + ' ya fue pedida', 409);
+  }
+
+  const mesaLibre = mesa.estado === 'libre';
+  if (mesaLibre) {
+    const n = Number(personas);
+    if (!Number.isInteger(n) || n < 1 || n > PERSONAS_MAX) {
+      throw errorApi('Indicá cuántas personas hay en la mesa (1 a ' + PERSONAS_MAX + ')', 400);
+    }
+  }
+
+  // Reusamos crearPedido, igual que el backend reusa sus procedimientos.
+  // Si falla (plato agotado), la bandeja queda como estaba.
+  const pedido = await crearPedido({
+    mesa_id: mesa.id,
+    personas: mesaLibre ? Number(personas) : undefined,
+    items: q.items
+  });
+
+  // crearPedido guardó su propia copia: volvemos a leer antes de marcar
+  const db2 = leerMock();
+  const q2 = db2.pedidosQr.find(p => p.id === idPedidoQr);
+  const mozo = usuarioActual();
+  q2.estado = 'confirmado';
+  q2.resuelto_en = new Date().toISOString();
+  q2.id_usuario_resuelve = mozo ? mozo.id : null;
+  q2.id_pedido = pedido.id;
+  guardarMock(db2);
+  return { id_pedido: pedido.id };
+}
+
+/* El mozo descarta el pedido (por ejemplo, fue una broma o el
+   cliente se arrepintió). No se borra: queda como "descartado".
+   409 si otro mozo ya lo resolvió. */
+async function descartarPedidoQr(idPedidoQr) {
+  if (!USAR_MOCK) {
+    await peticion('POST', '/pedidos-qr/' + idPedidoQr + '/descartar');
+    return { ok: true };
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  const q = db.pedidosQr.find(p => p.id === idPedidoQr);
+  if (!q || q.estado !== 'por_confirmar') {
+    throw errorApi('Este pedido ya fue confirmado o descartado por otro mozo', 409);
+  }
+  const mozo = usuarioActual();
+  q.estado = 'descartado';
+  q.resuelto_en = new Date().toISOString();
+  q.id_usuario_resuelve = mozo ? mozo.id : null;
+  guardarMock(db);
+  return { ok: true };
 }
