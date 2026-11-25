@@ -31,8 +31,9 @@ const TEXTO_ESTADO_PEDIDO = {
 const MAX_PERSONAS = 20;
 
 // Cada cuánto se vuelven a pedir las mesas (en milisegundos).
-// 10 s: (propuesta) ajustar en las pruebas en la hostería.
-const INTERVALO_ACTUALIZACION = 10000;
+// 5 s: lo pide la ERS (RNF-REN-02: un agotado se ve en 5 s o menos).
+// También hace que un pedido QR aparezca enseguida en el celular del mozo.
+const INTERVALO_ACTUALIZACION = 5000;
 
 // formatoPesos() y formatearHora() ahora están en formato.js,
 // porque también las usa la pantalla de pedido (y después cocina y caja).
@@ -190,7 +191,7 @@ async function cargarMesas() {
     mesasActuales = mesas;
 
     // Solo redibujamos si algo cambió: así la pantalla no
-    // "parpadea" cada 10 segundos sin motivo.
+    // "parpadea" cada 5 segundos sin motivo.
     // (pedidos_qr viene dentro de cada mesa: si llega un pedido QR,
     //  el texto cambia y se redibuja con el aviso)
     const texto = JSON.stringify(mesas);
@@ -201,7 +202,7 @@ async function cargarMesas() {
     actualizarAvisoQr(mesas);
 
     // Si venimos de enviar un pedido, lo mostramos una vez.
-    // Se va solo en la próxima actualización (10 s).
+    // Se va solo en la próxima actualización (5 s).
     if (avisoPendiente) {
       mostrarAviso(avisoPendiente);
       avisoPendiente = null;
@@ -513,7 +514,7 @@ async function pedirCuenta() {
   try {
     await cambiarEstadoMesa(mesaSeleccionada.id, 'cuenta_pedida');
     cerrarPanel();
-    actualizar(); // la mesa pasa a rojo en la grilla, sin esperar 10 s
+    actualizar(); // la mesa pasa a rojo en la grilla, sin esperar 5 s
   } catch (error) {
     manejarError(error, mostrarErrorOcupada);
     reiniciarBotonCuenta();
@@ -690,7 +691,7 @@ async function descartarQr() {
 }
 
 // Confirmado o descartado: cerramos y actualizamos la grilla ya
-// (sin esperar 10 s). El aviso se muestra en la próxima carga.
+// (sin esperar 5 s). El aviso se muestra en la próxima carga.
 function terminarQr(textoAviso) {
   cerrarPanel();
   avisoPendiente = textoAviso;
