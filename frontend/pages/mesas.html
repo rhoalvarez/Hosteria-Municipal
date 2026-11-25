@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Mesas · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Mesas</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+        <div class="encabezado__acciones">
+      <!-- Solo lo ve el encargado: mesas.js le saca el hidden.
+           Arranca oculto para que el mozo no lo vea ni un instante -->
+      <a id="enlace-menu" href="menu.html" class="boton boton--secundario" hidden>Menú</a>
+      <button id="btn-salir" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Leyenda: qué significa cada color -->
+    <div class="leyenda">
+      <span class="leyenda__item"><span class="leyenda__color leyenda__color--libre"></span>Libre</span>
+      <span class="leyenda__item"><span class="leyenda__color leyenda__color--ocupada"></span>Ocupada</span>
+      <span class="leyenda__item"><span class="leyenda__color leyenda__color--cuenta"></span>Cuenta pedida</span>
+    </div>
+
+    <!-- Mensajes para el usuario: "Cargando...", errores de conexión -->
+    <p id="mensaje" class="mensaje" role="status">Cargando mesas...</p>
+
+    <!-- Acá mesas.js dibuja una tarjeta por cada mesa -->
+    <div id="grilla-mesas" class="grilla-mesas"></div>
+  </main>
+  <!-- Panel que aparece al tocar una mesa (oculto al inicio) -->
+  <div id="panel-fondo" class="panel-fondo" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-titulo">
+      <h2 id="panel-titulo" class="panel__titulo"></h2>
+
+      <!-- Vista para mesa LIBRE: cuántas personas y tomar pedido -->
+      <div id="vista-libre" hidden>
+        <form id="form-personas" novalidate>
+          <div class="campo">
+            <label for="input-personas">¿Cuántas personas?</label>
+            <input id="input-personas" type="number" inputmode="numeric" min="1" max="20">
+          </div>
+          <p id="error-personas" class="mensaje mensaje--error" hidden></p>
+          <div class="panel__acciones">
+            <button type="button" class="boton boton--secundario" data-cerrar>Cancelar</button>
+            <button type="submit" class="boton boton--primario">Tomar pedido</button>
+          </div>
+        </form>
+      </div>
+      <!-- Vista para mesa OCUPADA o CUENTA PEDIDA -->
+      <div id="vista-ocupada" hidden>
+        <p id="cargando-pedidos" class="mensaje">Cargando pedidos...</p>
+        <ul id="lista-pedidos" class="lista-pedidos"></ul>
+        <p class="total-mesa">Total: <strong id="total-mesa">$ 0</strong></p>
+
+        <p id="aviso-cuenta" class="alerta alerta--info" hidden>
+          La cuenta ya fue pedida. El cobro se hace en Caja.
+        </p>
+        <p id="error-ocupada" class="mensaje mensaje--error" hidden></p>
+
+        <div class="panel__acciones">
+          <button type="button" class="boton boton--secundario" data-cerrar>Cerrar</button>
+          <button type="button" id="btn-agregar" class="boton boton--primario">Agregar pedido</button>
+        </div>
+        <button type="button" id="btn-pedir-cuenta" class="boton boton--peligro boton--bloque panel__boton-cuenta">
+          Pedir cuenta
+        </button>
+      </div>
+    </section>
+  </div>
+  <!-- El orden importa: api.js usa funciones de sesion.js,
+       y mesas.js usa funciones de sesion.js, api.js y formato.js -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/mesas.js"></script>
+</body>
+</html>

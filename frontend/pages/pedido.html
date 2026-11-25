@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#3D6570">
+  <title>Pedido – Restaurante Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+
+  <!-- Encabezado fijo: siempre se ve a qué mesa se le está cargando el pedido -->
+  <header class="pedido-encabezado">
+    <a href="mesas.html" class="pedido-volver">← Mesas</a>
+    <div>
+      <h1 id="titulo-mesa">Mesa</h1>
+      <p id="subtitulo">Cargando…</p>
+    </div>
+  </header>
+
+  <main class="pedido-main">
+    <!-- Avisos (wifi, mesa con cuenta pedida, etc.). aria-live para lectores de pantalla -->
+    <p id="aviso" class="pedido-aviso" role="status" aria-live="polite" hidden></p>
+
+    <div id="zona-menu">
+      <div class="pedido-buscador">
+        <label for="buscar">Buscar por código o nombre</label>
+        <input type="search" id="buscar" placeholder="Ej: A05 o milanesa" autocomplete="off">
+      </div>
+
+      <!-- Botones de categoría: se arman desde js/pedido.js -->
+      <nav id="categorias" class="pedido-categorias" aria-label="Categorías del menú"></nav>
+
+      <ul id="lista-menu" class="lista-menu"></ul>
+    </div>
+  </main>
+
+  <!-- Barra de abajo: cantidad de platos y total; abre el resumen -->
+  <footer id="barra-pedido" class="barra-pedido">
+    <button type="button" id="btn-ver-pedido" disabled>Pedido vacío</button>
+  </footer>
+
+  <!-- Panel de resumen (mismo comportamiento que el panel de mesas) -->
+  <div id="fondo-panel" class="pedido-fondo" hidden>
+    <section class="pedido-panel" role="dialog" aria-modal="true" aria-labelledby="titulo-resumen">
+      <h2 id="titulo-resumen">Resumen del pedido</h2>
+
+      <ul id="lista-resumen" class="lista-resumen"></ul>
+
+      <p class="pedido-total">Total: <strong id="total-resumen"></strong></p>
+      <p class="pedido-nota">Precios del menú. El importe final lo calcula el sistema.</p>
+
+      <p id="error-envio" class="pedido-aviso pedido-aviso--error" role="alert" hidden></p>
+
+      <div class="panel-botones">
+        <button type="button" id="btn-seguir" class="boton-seguir">Seguir agregando</button>
+        <button type="button" id="btn-enviar" class="boton-enviar">Enviar a cocina</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- El orden importa: api.js usa sesion.js, y pedido.js usa
+       sesion.js, api.js y formato.js -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/pedido.js"></script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <!-- Sin esta línea, el celular muestra la página como si fuera de PC, chiquita -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Ingresar · Restaurante Portal de la Luna</title>
+  <link rel="stylesheet" href="css/estilos.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<body class="pagina-login">
+
+  <main class="login">
+    <div class="login__marca">
+      <h1>Portal de la Luna</h1>
+      <p>Sistema del restaurante</p>
+    </div>
+
+    <!-- novalidate: validamos nosotros con JS para mostrar mensajes en español -->
+    <form id="form-login" class="tarjeta" novalidate>
+      <h2>Ingresar</h2>
+
+      <div class="campo">
+        <label for="usuario">Usuario</label>
+        <!-- autocapitalize="none": el celular no pone mayúscula sola ("Mozo1") -->
+        <input id="usuario" name="usuario" type="text"
+               autocomplete="username" autocapitalize="none"
+               autocorrect="off" spellcheck="false" required>
+      </div>
+
+      <div class="campo">
+        <label for="clave">Contraseña</label>
+        <input id="clave" name="clave" type="password"
+               autocomplete="current-password" required>
+      </div>
+
+      <!-- role="alert": los lectores de pantalla leen el error apenas aparece -->
+      <p id="mensaje-error" class="alerta alerta--error" role="alert" hidden></p>
+
+      <button type="submit" id="btn-ingresar" class="boton boton--primario boton--bloque">
+        Ingresar
+      </button>
+    </form>
+
+    <!-- Solo se muestra cuando USAR_MOCK = true -->
+    <div id="aviso-mock" class="alerta alerta--info login__aviso" hidden></div>
+  </main>
+
+  <!-- El orden importa: api.js usa funciones de sesion.js,
+       y login.js usa funciones de los dos -->
+  <script src="js/sesion.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

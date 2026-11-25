@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Menú · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Menú</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+    <div class="encabezado__acciones">
+      <!-- Es un enlace (<a>) y no un botón porque lleva a otra página -->
+      <a href="mesas.html" class="boton boton--secundario">Mesas</a>
+      <button id="btn-salir" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Pestañas: platos activos / dados de baja.
+         aria-pressed dice cuál está elegida (lo leen los lectores de pantalla
+         y el CSS la pinta), igual que las categorías en pedido.html -->
+    <div class="menu-pestanas">
+      <button type="button" id="tab-activos" class="menu-pestana" aria-pressed="true">Activos</button>
+      <button type="button" id="tab-bajas" class="menu-pestana" aria-pressed="false">Dados de baja</button>
+    </div>
+
+    <!-- Buscador + botón de alta -->
+    <div class="menu-herramientas">
+      <div class="pedido-buscador">
+        <label for="buscador">Buscar por código o nombre</label>
+        <input id="buscador" type="search" autocomplete="off" placeholder="Ej.: A01 o milanesa">
+      </div>
+      <button type="button" id="btn-nuevo" class="boton boton--exito">+ Nuevo plato</button>
+    </div>
+
+    <!-- Aviso de lo que pasó ("Plato guardado ✔", "Revisá el precio").
+         El botón "Editar" solo aparece después de reactivar un plato -->
+    <div id="aviso" class="alerta alerta--info menu-aviso" role="status" hidden>
+      <span id="aviso-texto"></span>
+      <button type="button" id="aviso-editar" class="boton boton--primario" hidden>Editar precio</button>
+    </div>
+
+    <!-- "Cargando...", errores de conexión, "No hay platos" -->
+    <p id="mensaje" class="mensaje" role="status">Cargando menú...</p>
+
+    <!-- Acá menu.js dibuja los platos agrupados por categoría -->
+    <div id="lista-platos"></div>
+  </main>
+
+  <!-- Panel con el formulario: el MISMO para alta y edición -->
+  <div id="panel-fondo" class="panel-fondo" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-titulo">
+      <h2 id="panel-titulo" class="panel__titulo">Nuevo plato</h2>
+
+      <!-- novalidate: validamos con JS para mostrar nuestros mensajes en español,
+           los mismos que devuelve el servidor -->
+      <form id="form-plato" novalidate>
+        <div class="campo">
+          <label for="input-categoria">Categoría</label>
+          <select id="input-categoria" aria-describedby="error-categoria"></select>
+          <p id="error-categoria" class="mensaje mensaje--error" hidden></p>
+        </div>
+
+        <div class="campo">
+          <label for="input-codigo">Código</label>
+          <!-- autocapitalize: el celular escribe en mayúsculas solo -->
+          <input id="input-codigo" type="text" maxlength="4" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" placeholder="Ej.: A05"
+                 aria-describedby="error-codigo">
+          <p id="error-codigo" class="mensaje mensaje--error" hidden></p>
+        </div>
+
+        <div class="campo">
+          <label for="input-nombre">Nombre</label>
+          <input id="input-nombre" type="text" maxlength="60" autocomplete="off"
+                 aria-describedby="error-nombre">
+          <p id="error-nombre" class="mensaje mensaje--error" hidden></p>
+        </div>
+
+        <div class="campo">
+          <label for="input-precio">Precio ($, sin centavos)</label>
+          <!-- inputmode numeric: en el celular abre el teclado de números -->
+          <input id="input-precio" type="number" inputmode="numeric" min="1" step="1"
+                 aria-describedby="error-precio">
+          <p id="error-precio" class="mensaje mensaje--error" hidden></p>
+        </div>
+
+        <!-- Error general (sin wifi, error del servidor) -->
+        <p id="error-form" class="mensaje mensaje--error" role="alert" hidden></p>
+
+        <div class="panel__acciones">
+          <button type="button" class="boton boton--secundario" data-cerrar>Cancelar</button>
+          <button type="submit" id="btn-guardar" class="boton boton--primario">Guardar</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- El orden importa: api.js usa sesion.js; menu.js usa los tres -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/menu.js"></script>
+</body>
+</html>

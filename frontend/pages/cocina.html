@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Cocina · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<!-- vista-cocina: clase para agrandar letras y botones en la tablet -->
+<body class="vista-cocina">
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Cocina</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+    <div class="encabezado__acciones">
+      <!-- Los navegadores no dejan reproducir sonido hasta que el
+           usuario toca la pantalla: por eso hay que activarlo a mano.
+           aria-pressed indica si está activado (accesibilidad). -->
+      <button id="btn-sonido" type="button" class="boton boton--secundario" aria-pressed="false">
+        🔇 Activar sonido
+      </button>
+      <button id="btn-salir" type="button" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Cantidad de pedidos esperando: "3 pedidos pendientes" -->
+    <p id="contador" class="cocina-contador"></p>
+
+    <!-- Mensajes: "Cargando...", errores de conexión -->
+    <p id="mensaje" class="mensaje" role="status">Cargando pedidos...</p>
+
+    <!-- Cuando no hay nada para preparar -->
+    <p id="sin-pedidos" class="cocina-vacio" hidden>No hay pedidos pendientes ✔</p>
+
+    <!-- Acá cocina.js dibuja una tarjeta por pedido, por orden de llegada -->
+    <div id="grilla-cocina" class="grilla-cocina"></div>
+  </main>
+
+  <!-- El orden importa: api.js usa sesion.js, y cocina.js usa
+       sesion.js, api.js y formato.js (formatearHora) -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/cocina.js"></script>
+</body>
+</html>

@@ -1,0 +1,1150 @@
+/* =========================================================
+   estilos.css — Estilos generales del sistema del restaurante
+   ---------------------------------------------------------
+   "Mobile first": los estilos base son para el celular del
+   mozo. Con @media (min-width: 768px) agrandamos para la
+   tablet de cocina y las PC.
+   Sin fuentes ni librerías externas: el sistema funciona
+   SIN internet.
+   ========================================================= */
+
+/* ---------- 1. Variables (colores, tamaños) ----------
+   Si hay que cambiar un color, se cambia solo acá. */
+:root {
+  /* Paleta OFICIAL del logo de la Municipalidad de San José.
+     Se usan tal cual en bordes, fondos y detalles sin texto. */
+  --logo-azul:     #598c99;
+  --logo-verde:    #68813e;
+  --logo-rojo:     #a12800;
+  --logo-amarillo: #edcc3b;
+  --logo-crema:    #fff7ea;
+  --logo-marron:   #ad7f56;
+  --logo-rosa:     #ba695e;
+
+  /* Colores de la interfaz.
+     Cuando un color lleva LETRA BLANCA encima usamos una versión
+     más oscura del color del logo, para llegar al contraste
+     mínimo recomendado (4,5 a 1, norma WCAG AA). */
+  --color-primario: #3d6570;        /* azul del logo oscurecido (6,4:1) */
+  --color-primario-oscuro: #2d4b53; /* hover y degradé del login */
+  --color-acento: var(--logo-amarillo); /* sol */
+
+  /* Fondo y texto */
+  --color-fondo: var(--logo-crema);
+  --color-superficie: #ffffff;
+  --color-texto: #1d232b;
+  --color-texto-suave: #5b6573;
+  --color-borde: #d5dae1;
+
+  /* Estados (mesas y pedidos) */
+  --color-exito: #55692f;            /* verde del logo oscurecido (6,1:1): libre / listo */
+  --color-alerta: var(--logo-amarillo); /* ocupada / pendiente (va con letra OSCURA) */
+  --color-urgente: var(--logo-rojo); /* cuenta pedida: hay que ir a la mesa */
+  --color-info: var(--color-primario); /* en preparación */
+  --color-error: var(--logo-rojo);   /* errores / agotado */
+
+  /* Tipografía del sistema operativo (no necesita internet) */
+  --fuente: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* Espacios y formas */
+  --espacio: 16px;
+  --radio: 10px;
+  --sombra: 0 1px 3px rgba(0, 0, 0, 0.12);
+
+  /* Tamaño mínimo de lo que se toca con el dedo */
+  --alto-toque: 48px;
+}
+
+/* ---------- 2. Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box; /* el ancho incluye padding y borde */
+}
+
+html {
+  /* 16px como mínimo: con menos, el iPhone hace zoom al tocar un input */
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--fuente);
+  line-height: 1.5;
+  color: var(--color-texto);
+  background: var(--color-fondo);
+  min-height: 100vh;
+}
+
+h1, h2, h3 {
+  margin: 0 0 0.5em;
+  line-height: 1.2;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Contorno visible al navegar con teclado (accesibilidad).
+   Es azul y no amarillo: el amarillo casi no se ve sobre el
+   fondo crema. */
+:focus-visible {
+  outline: 3px solid var(--color-primario);
+  outline-offset: 2px;
+}
+
+/* ---------- 3. Estructura de página ---------- */
+.encabezado {
+  position: sticky; /* queda fijo arriba al hacer scroll */
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espacio);
+  padding: 12px var(--espacio);
+  background: var(--color-primario);
+  color: #fff;
+}
+
+/* Sobre el encabezado azul, el contorno de foco va en amarillo */
+.encabezado :focus-visible {
+  outline-color: var(--color-acento);
+}
+
+.encabezado__titulo {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.encabezado__usuario {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.contenedor {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--espacio);
+}
+
+.tarjeta {
+  background: var(--color-superficie);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  padding: var(--espacio);
+}
+
+/* Grilla que se acomoda sola: más columnas si hay más ancho */
+.grilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+/* ---------- 4. Formularios ---------- */
+.campo {
+  margin-bottom: var(--espacio);
+}
+
+.campo label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.campo input,
+.campo select,
+.campo textarea {
+  width: 100%;
+  min-height: var(--alto-toque);
+  padding: 10px 12px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio);
+}
+
+.campo input:focus,
+.campo select:focus,
+.campo textarea:focus {
+  border-color: var(--color-primario);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(61, 101, 112, 0.25); /* --color-primario transparente */
+}
+
+/* ---------- 5. Botones ---------- */
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--alto-toque);
+  padding: 10px 18px;
+  font: inherit;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radio);
+  cursor: pointer;
+  /* evita el retardo de doble toque en celulares */
+  touch-action: manipulation;
+}
+
+.boton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.boton--primario {
+  background: var(--color-primario);
+  color: #fff;
+}
+
+.boton--exito {
+  background: var(--color-exito);
+  color: #fff;
+}
+
+.boton--peligro {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.boton--secundario {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+}
+
+.boton--bloque {
+  width: 100%;
+}
+
+/* El hover solo en dispositivos con mouse (en el celular se "pega") */
+@media (hover: hover) {
+  .boton--primario:hover:not(:disabled) {
+    background: var(--color-primario-oscuro);
+  }
+}
+
+/* ---------- 6. Mensajes ---------- */
+.alerta {
+  padding: 12px;
+  margin: 0 0 var(--espacio);
+  border-radius: var(--radio);
+  border-left: 4px solid;
+}
+
+.alerta--error {
+  background: #f8e3dc;
+  border-color: var(--color-error);
+  color: #7a1e00;
+}
+
+.alerta--info {
+  background: #e6eff1;
+  border-color: var(--logo-azul);
+  color: var(--color-primario-oscuro);
+}
+
+/* Texto simple de estado de la pantalla ("Cargando...") */
+.mensaje {
+  margin: 8px 0;
+  color: var(--color-texto-suave);
+}
+
+.mensaje--error {
+  color: var(--color-error);
+  font-weight: 600;
+}
+
+/* ---------- 7. Etiquetas de estado ----------
+   Se usan en mesas y pedidos. Además del color llevan texto,
+   para que se entienda aunque alguien no distinga colores. */
+.estado {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.estado--libre,
+.estado--listo          { background: var(--color-exito); }
+/* El amarillo con letra blanca no se lee: va con letra oscura */
+.estado--ocupada,
+.estado--pendiente      { background: var(--color-alerta); color: var(--color-texto); }
+.estado--cuenta_pedida  { background: var(--color-urgente); }
+.estado--en_preparacion { background: var(--color-info); }
+.estado--por_confirmar  { background: var(--color-texto-suave); }
+.estado--agotado        { background: var(--color-error); }
+
+/* ---------- 8. Pantalla de login ---------- */
+.pagina-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--espacio);
+  background: linear-gradient(160deg, var(--color-primario), var(--color-primario-oscuro));
+}
+
+.login {
+  width: 100%;
+  max-width: 380px;
+}
+
+.login__marca {
+  text-align: center;
+  color: #fff;
+  margin-bottom: 24px;
+}
+
+.login__marca h1 {
+  font-size: 1.6rem;
+  margin-bottom: 4px;
+}
+
+.login__marca p {
+  margin: 0;
+  color: var(--color-acento);
+}
+
+.login__aviso {
+  margin-top: var(--espacio);
+  font-size: 0.9rem;
+}
+
+/* ---------- 9. Pantalla de mesas (pages/mesas.html) ---------- */
+
+/* Leyenda: qué significa cada color */
+.leyenda {
+  display: flex;
+  flex-wrap: wrap;          /* si no entra en una línea, baja */
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.leyenda__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.leyenda__color {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.leyenda__color--libre   { background: var(--logo-verde); }
+.leyenda__color--ocupada { background: var(--logo-amarillo); }
+.leyenda__color--cuenta  { background: var(--logo-rojo); }
+
+/* Grilla de mesas: en el celular, 3 por fila */
+.grilla-mesas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+/* Cada mesa es un <button>: se puede tocar y funciona con teclado.
+   Fondo claro + borde del color del estado + letra oscura:
+   se lee bien en los tres estados, incluso en el amarillo. */
+.mesa {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 90px;          /* bastante más que el mínimo de 48px */
+  padding: 8px;
+  border: 3px solid;
+  border-radius: var(--radio);
+  font-family: inherit;
+  color: var(--color-texto);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mesa__numero {
+  font-size: 1.8rem;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.mesa__estado {
+  margin-top: 4px;
+  font-size: 0.8rem;
+}
+
+/* Los modificadores se llaman IGUAL que los estados de la base
+   (libre, ocupada, cuenta_pedida). Así el JS arma la clase con
+   'mesa--' + mesa.estado, sin traducir nada. */
+.mesa--libre {
+  background: #e8eddd;
+  border-color: var(--logo-verde);
+}
+
+.mesa--ocupada {
+  background: #fbf0c4;
+  border-color: var(--logo-amarillo);
+}
+
+.mesa--cuenta_pedida {
+  background: #f5ddd5;
+  border-color: var(--logo-rojo);
+}
+
+/* Respuesta al toque: en el celular no existe el "hover" */
+.mesa:active {
+  transform: scale(0.96);
+}
+/* Panel que aparece al tocar una mesa.
+   En el celular sale desde abajo (cerca del pulgar);
+   en la tablet y la PC, centrado. */
+.panel-fondo {
+  position: fixed;          /* tapa toda la pantalla */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;              /* por encima del encabezado (10) */
+  display: flex;
+  align-items: flex-end;    /* panel pegado abajo */
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45); /* oscurece lo de atrás */
+}
+
+.panel {
+  width: 100%;
+  max-height: 85vh;         /* si es largo, scroll adentro */
+  overflow-y: auto;
+  padding: var(--espacio);
+  background: var(--color-superficie);
+  border-radius: var(--radio) var(--radio) 0 0;
+}
+
+.panel__titulo {
+  font-size: 1.3rem;
+}
+
+.panel__acciones {
+  display: flex;
+  gap: 12px;
+  margin-top: var(--espacio);
+}
+
+.panel__acciones .boton {
+  flex: 1;                  /* botones del mismo ancho */
+}
+
+@media (min-width: 768px) {
+  .panel-fondo {
+    align-items: center;
+  }
+
+  .panel {
+    max-width: 480px;
+    border-radius: var(--radio);
+  }
+}
+/* Lista de pedidos dentro del panel de la mesa */
+.lista-pedidos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pedido {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-borde);
+}
+
+.pedido__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  color: var(--color-texto-suave);
+}
+
+.pedido__items {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pedido__obs {
+  display: block;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--color-texto-suave);
+}
+
+.total-mesa {
+  margin: 12px 0 0;
+  font-size: 1.2rem;
+  text-align: right;
+}
+
+.panel__boton-cuenta {
+  margin-top: 12px;
+}
+/* ---------- 10. Tablet y PC (desde 768px de ancho) ---------- */
+@media (min-width: 768px) {
+  :root {
+    --espacio: 24px;
+  }
+
+  .encabezado__titulo {
+    font-size: 1.4rem;
+  }
+
+  .grilla {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  /* En cocina se lee de lejos: letra más grande */
+  .vista-cocina {
+    font-size: 1.15rem;
+  }
+
+  .grilla-mesas {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .mesa {
+    min-height: 110px;
+  }
+}
+
+/* PC de administración */
+@media (min-width: 1024px) {
+  .grilla-mesas {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* ---------- 11. Menos animaciones si el usuario lo pide ---------- */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .mesa:active {
+    transform: none;
+  }
+}
+
+/* =============================================================
+   PANTALLA DE PEDIDO DEL MOZO  (pegar al final de css/estilos.css)
+   Mobile first. Los var() tienen el color de respaldo por si
+   alguna variable se llama distinto en estilos.css.
+   Todos los botones miden al menos 44px (tamaño cómodo para el dedo).
+   ============================================================= */
+
+.pedido-encabezado {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-primario, #3D6570);
+  color: #fff;
+}
+.pedido-encabezado h1 { margin: 0; font-size: 1.25rem; }
+.pedido-encabezado p  { margin: 0; font-size: 0.9rem; }
+
+.pedido-volver {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.pedido-main {
+  padding: 1rem;
+  padding-bottom: 6rem;   /* lugar para la barra fija de abajo */
+}
+
+/* ---------- Avisos ---------- */
+.pedido-aviso {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--logo-amarillo, #EDCC3B);
+  color: #222;               /* amarillo siempre con letra oscura */
+  font-weight: bold;
+}
+.pedido-aviso--error {
+  background: var(--color-urgente, #A12800);
+  color: #fff;
+}
+
+/* ---------- Buscador y categorías ---------- */
+.pedido-buscador label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: bold;
+}
+.pedido-buscador input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid var(--color-primario, #3D6570);
+  border-radius: 8px;
+  font-size: 1rem;           /* 16px o más: evita que el celular haga zoom solo */
+}
+
+.pedido-categorias {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;          /* en celular se deslizan de costado */
+  padding: 0.75rem 0;
+}
+.pedido-categoria {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--color-primario, #3D6570);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-primario, #3D6570);
+  font-size: 1rem;
+  font-weight: bold;
+}
+.pedido-categoria[aria-pressed="true"] {
+  background: var(--color-primario, #3D6570);
+  color: #fff;
+}
+
+/* ---------- Lista del menú ---------- */
+.lista-menu,
+.lista-resumen {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plato {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.plato-info   { display: flex; flex-direction: column; }
+.plato-codigo { font-size: 0.85rem; color: #555; }
+.plato-nombre { font-weight: bold; }
+.plato-precio { color: #333; }
+.plato-vacio  { padding: 1rem; text-align: center; color: #555; }
+
+/* Agotado: gris y tachado (no se usa opacity para no perder contraste) */
+.plato--agotado { background: #eee; }
+.plato--agotado .plato-nombre { text-decoration: line-through; color: #444; }
+.etiqueta-agotado {
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: var(--color-urgente, #A12800);
+  color: #fff;
+  font-weight: bold;
+}
+
+/* ---------- Controles de cantidad ---------- */
+.controles {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+.boton-cantidad {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primario, #3D6570);
+  color: #fff;
+  font-size: 1.4rem;
+}
+.cantidad {
+  min-width: 2ch;
+  font-size: 1.1rem;
+  font-weight: bold;
+  text-align: center;
+}
+.boton-agregar {
+  min-height: 44px;
+  padding: 0 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-exito, #55692F);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: bold;
+}
+.boton-quitar {
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 0.75rem;
+  border: 2px solid var(--color-urgente, #A12800);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-urgente, #A12800);
+  font-weight: bold;
+}
+
+/* ---------- Barra fija de abajo ---------- */
+.barra-pedido {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
+}
+.barra-pedido button {
+  width: 100%;
+  min-height: 52px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-exito, #55692F);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+/* ---------- Panel de resumen ---------- */
+.pedido-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;     /* celular: el panel sale desde abajo */
+  background: rgba(0, 0, 0, 0.5);
+}
+/* IMPORTANTE: display:flex le gana al atributo hidden; sin esto no se oculta */
+.pedido-fondo[hidden],
+.barra-pedido[hidden] { display: none; }
+
+.pedido-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1rem;
+  border-radius: 16px 16px 0 0;
+  background: var(--logo-crema, #FFF7EA);
+}
+.pedido-panel h2 { margin-top: 0; }
+
+.linea {
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border-left: 4px solid var(--color-primario, #3D6570);
+  border-radius: 8px;
+  background: #fff;
+}
+.linea--agotada { border-left-color: var(--color-urgente, #A12800); }
+.linea-cabecera {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+.linea-aviso { margin: 0 0 0.5rem; color: var(--color-urgente, #A12800); font-weight: bold; }
+.linea-observaciones {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+.linea-observaciones input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.6rem;
+  border: 1px solid #888;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.pedido-total { font-size: 1.2rem; text-align: right; }
+.pedido-nota  { margin-top: 0; font-size: 0.85rem; color: #555; text-align: right; }
+
+.panel-botones { display: flex; gap: 0.5rem; }
+.panel-botones button {
+  flex: 1;
+  min-height: 52px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+}
+.boton-seguir {
+  border: 2px solid var(--color-primario, #3D6570);
+  background: #fff;
+  color: var(--color-primario, #3D6570);
+}
+.boton-enviar {
+  border: none;
+  background: var(--color-exito, #55692F);
+  color: #fff;
+}
+
+.barra-pedido button:disabled,
+.panel-botones button:disabled {
+  background: #ccc;
+  color: #444;
+  border-color: #ccc;
+}
+
+/* ---------- Tablet y PC ---------- */
+@media (min-width: 768px) {
+  .lista-menu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+  .lista-menu .plato { margin-bottom: 0; }
+  .plato-vacio { grid-column: 1 / -1; }
+
+  .pedido-fondo { align-items: center; justify-content: center; }
+  .pedido-panel { max-width: 560px; border-radius: 16px; }
+}
+
+@media (min-width: 1024px) {
+  .lista-menu { grid-template-columns: 1fr 1fr 1fr; }
+}
+/* =========================================================
+   VISTA DE COCINA (pages/cocina.html) — pensada para tablet
+   Se lee de lejos: letras grandes, cantidades en negrita,
+   observaciones resaltadas y botón "Listo" grande.
+   ========================================================= */
+
+/* Botones del encabezado (Activar sonido + Salir) */
+.encabezado__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* En cocina usamos todo el ancho de la tablet */
+.vista-cocina .contenedor {
+  max-width: none;
+}
+
+.cocina-contador {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.cocina-vacio {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-exito, #55692F);
+}
+
+/* Grilla: 1 columna en celular, 2 en tablet vertical, 3 en horizontal */
+.grilla-cocina {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: start; /* cada tarjeta con su altura, no estiradas */
+}
+
+@media (min-width: 768px) {
+  .grilla-cocina { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .grilla-cocina { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* ---------- Tarjeta de pedido ---------- */
+.pedido-cocina {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 12px;
+  border-top: 8px solid var(--logo-amarillo, #EDCC3B); /* amarillo = pendiente, como en mesas */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+/* Demorado: borde y fondo rojizos. No depende solo del color:
+   el texto "hace 25 min" también lo dice (accesibilidad). */
+.pedido-cocina--demorado {
+  border-top-color: var(--color-urgente, #A12800);
+  background: #FBEDEA;
+}
+
+.pedido-cocina__cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.pedido-cocina__mesa {
+  font-size: 1.75rem;
+  font-weight: 800;
+}
+
+.pedido-cocina__tiempo {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.pedido-cocina--demorado .pedido-cocina__tiempo {
+  color: var(--color-urgente, #A12800);
+}
+
+.pedido-cocina__datos {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #555; /* gris oscuro: 7:1 sobre blanco */
+}
+
+/* Ítems: sin viñetas, una línea por plato */
+.pedido-cocina__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 1.25rem;
+}
+
+.pedido-cocina__items li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.pedido-cocina__items li:last-child {
+  border-bottom: none;
+}
+
+.pedido-cocina__cantidad {
+  min-width: 2.5rem;
+  font-weight: 800;
+}
+
+/* Observaciones: en su propio renglón, fondo amarillo con letra oscura */
+.pedido-cocina__obs {
+  flex-basis: 100%;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: var(--logo-amarillo, #EDCC3B);
+  color: #2b2b2b;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* Botón "Listo": grande para tocar con apuro (mínimo 48px recomendado) */
+.pedido-cocina__listo {
+  min-height: 56px;
+  margin-top: auto;
+  border: none;
+  background: var(--color-exito, #55692F);
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+/* Primer toque: cambia de color para que se note que falta confirmar */
+.pedido-cocina__listo--confirmando {
+  background: var(--logo-amarillo, #EDCC3B);
+  color: #2b2b2b;
+}
+
+.pedido-cocina__listo:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+/* Pedido recién llegado: titila 3 veces (por si el sonido está apagado) */
+.pedido-cocina--nuevo {
+  animation: pedido-nuevo 1s ease-in-out 3;
+}
+
+@keyframes pedido-nuevo {
+  50% { box-shadow: 0 0 0 6px var(--logo-azul, #598C99); }
+}
+
+/* Si el dispositivo pide menos animaciones, no titila */
+@media (prefers-reduced-motion: reduce) {
+  .pedido-cocina--nuevo { animation: none; }
+}
+/* =========================================================
+   ABM DEL MENÚ (pages/menu.html) — solo encargado
+   Reutiliza .plato, .lista-menu, .pedido-buscador, .panel y .boton.
+   Acá van solo las clases nuevas (menu-*) y algunos ajustes.
+   ========================================================= */
+
+/* Un enlace con aspecto de botón ("Mesas" en el encabezado) */
+a.boton {
+  text-decoration: none;
+}
+
+/* ---------- Pestañas Activos / Dados de baja ---------- */
+.menu-pestanas {
+  display: flex;
+  margin-bottom: 1rem;
+  border: 2px solid var(--color-primario, #3D6570);
+  border-radius: var(--radio, 10px);
+  overflow: hidden;              /* que las esquinas redondeadas corten los botones */
+}
+
+.menu-pestana {
+  flex: 1;                       /* las dos del mismo ancho */
+  min-height: var(--alto-toque, 48px);
+  padding: 0.5rem;
+  border: none;
+  background: #fff;
+  color: var(--color-primario, #3D6570);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.menu-pestana + .menu-pestana {
+  border-left: 2px solid var(--color-primario, #3D6570);
+}
+
+/* La elegida: misma idea que las categorías de pedido.html */
+.menu-pestana[aria-pressed="true"] {
+  background: var(--color-primario, #3D6570);
+  color: #fff;
+}
+
+/* ---------- Buscador + "Nuevo plato" ---------- */
+/* Celular: uno debajo del otro, el botón a todo el ancho */
+.menu-herramientas {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* ---------- Aviso con botón "Editar precio" ---------- */
+.menu-aviso {
+  display: flex;
+  flex-wrap: wrap;               /* en el celular el botón baja si no entra */
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.menu-aviso span {
+  flex: 1 1 200px;
+}
+
+/* ---------- Grupos por categoría ---------- */
+.menu-grupo {
+  margin-bottom: 1.5rem;
+}
+
+.menu-grupo__titulo {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid var(--logo-marron, #AD7F56);
+  font-size: 1.1rem;
+}
+
+/* ---------- Cada plato ---------- */
+/* En el celular los botones van en un renglón aparte, abajo de los datos */
+.menu-plato {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.menu-plato .plato-info {
+  flex: 1 1 180px;
+}
+
+/* La etiqueta Disponible / Agotado no se estira a todo el ancho */
+.menu-plato .estado {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}
+
+.menu-plato__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.menu-plato__acciones .boton {
+  flex: 1 1 auto;                /* reparten el ancho; si no entran, bajan */
+  padding: 8px 12px;
+}
+
+/* Dado de baja: fondo gris y borde punteado (no se usa opacity: baja el contraste) */
+.menu-plato--baja {
+  background: #f1f1f1;
+  border: 2px dashed var(--color-borde, #d5dae1);
+  box-shadow: none;
+}
+
+/* Primer toque de "Dar de baja": amarillo con letra oscura, como "Listo" en cocina */
+.menu-boton--confirmando {
+  background: var(--logo-amarillo, #EDCC3B);
+  color: #2b2b2b;
+}
+
+/* ---------- Tablet y PC ---------- */
+@media (min-width: 768px) {
+  /* Buscador y botón en la misma fila, el botón alineado abajo con el input */
+  .menu-herramientas {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .menu-herramientas .pedido-buscador {
+    flex: 1;
+  }
+}
+
+/* En PC, 2 columnas (y no 3 como en pedido): cada tarjeta tiene 3 botones */
+@media (min-width: 1024px) {
+  .menu-grupo .lista-menu {
+    grid-template-columns: 1fr 1fr;
+  }
+}
