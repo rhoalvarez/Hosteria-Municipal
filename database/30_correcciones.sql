@@ -466,7 +466,9 @@ CREATE PROCEDURE sp_menu_reactivar(
 )
 BEGIN
     UPDATE rest_item_menu
-    SET activo = 1
+    SET
+        activo = 1,
+        agotado = 0
     WHERE id_item = p_id
       AND activo = 0;
 
