@@ -12,8 +12,8 @@
    ========================================================= */
 
 // Cada cuánto se vuelven a pedir los pedidos (ms). Igual que mesas.
-// 10 s: (propuesta) ajustar en las pruebas en la hostería.
-const INTERVALO_ACTUALIZACION = 10000;
+// 5 s: (propuesta) ajustar en las pruebas en la hostería.
+const INTERVALO_ACTUALIZACION = 5000;
 
 // A partir de cuántos minutos un pedido se marca como demorado
 // (propuesta: confirmar con la cocina de la hostería)
