@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#3D6570">
+  <title>Menú – Restaurante Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Estilos solo de esta pantalla (descripción de platos, pantalla de "enviado") -->
+  <link rel="stylesheet" href="../css/qr.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
+       Cuando tengamos el logo, se cambia por assets/logo.png -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+
+  <!-- =========================================================
+       Pantalla del CLIENTE (Inc. 2 – RF-QR)
+       Se abre escaneando el QR de la mesa: qr.html?c=CODIGO
+       No hay inicio de sesión ni enlaces a las pantallas del personal.
+       ========================================================= -->
+
+  <!-- Encabezado fijo: el cliente ve siempre en qué mesa está pidiendo -->
+  <header class="pedido-encabezado">
+    <div>
+      <h1 id="titulo-mesa">Portal de la Luna</h1>
+      <p id="subtitulo">Cargando el menú…</p>
+    </div>
+  </header>
+
+  <main class="pedido-main">
+    <!-- Avisos (wifi, código inválido, cuenta pedida...). aria-live para lectores de pantalla -->
+    <p id="aviso" class="pedido-aviso" role="status" aria-live="polite" hidden></p>
+
+    <!-- Menú: buscador, categorías y platos -->
+    <div id="zona-menu" hidden>
+      <div class="pedido-buscador">
+        <label for="buscar">Buscar en el menú</label>
+        <input type="search" id="buscar" placeholder="Ej: milanesa o café" autocomplete="off">
+      </div>
+
+      <!-- Botones de categoría: se arman desde js/qr.js -->
+      <nav id="categorias" class="pedido-categorias" aria-label="Categorías del menú"></nav>
+
+      <ul id="lista-menu" class="lista-menu"></ul>
+    </div>
+
+    <!-- Después de enviar: confirmación grande (reemplaza al menú) -->
+    <section id="zona-enviado" class="qr-enviado" hidden aria-labelledby="titulo-enviado">
+      <p class="qr-enviado__icono" aria-hidden="true">✔</p>
+      <h2 id="titulo-enviado">Tu pedido le llegó al mozo</h2>
+      <p>En un momento se acerca a confirmarlo y lo envía a la cocina.</p>
+      <button type="button" id="btn-otro-pedido" class="boton-seguir">Hacer otro pedido</button>
+    </section>
+  </main>
+
+  <!-- Barra de abajo: cantidad de platos y total; abre el resumen -->
+  <footer id="barra-pedido" class="barra-pedido" hidden>
+    <button type="button" id="btn-ver-pedido" disabled>Pedido vacío</button>
+  </footer>
+
+  <!-- Panel de resumen (mismo comportamiento que en la pantalla del mozo) -->
+  <div id="fondo-panel" class="pedido-fondo" hidden>
+    <section class="pedido-panel" role="dialog" aria-modal="true" aria-labelledby="titulo-resumen">
+      <h2 id="titulo-resumen">Tu pedido</h2>
+
+      <ul id="lista-resumen" class="lista-resumen"></ul>
+
+      <p class="pedido-total">Total: <strong id="total-resumen"></strong></p>
+      <p class="pedido-nota">El mozo revisa tu pedido antes de enviarlo a la cocina.</p>
+
+      <p id="error-envio" class="pedido-aviso pedido-aviso--error" role="alert" hidden></p>
+
+      <div class="panel-botones">
+        <button type="button" id="btn-seguir" class="boton-seguir">Seguir eligiendo</button>
+        <button type="button" id="btn-enviar" class="boton-enviar">Enviar al mozo</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- El orden importa: qr.js usa api.js y formato.js.
+       NO se carga sesion.js: el cliente no inicia sesión. -->
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/qr.js"></script>
+</body>
+</html>

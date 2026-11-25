@@ -1,0 +1,66 @@
+/* =========================================================
+   qr.css — Estilos SOLO de la pantalla del cliente (qr.html)
+   ---------------------------------------------------------
+   Se carga DESPUÉS de estilos.css: reusa todas sus clases
+   (plato, barra-pedido, pedido-panel...) y acá agrega solo
+   lo nuevo de esta pantalla. Así no tocamos estilos.css,
+   que ya está probado con el Inc. 1.
+   Los var() llevan el color de la paleta como respaldo.
+   ========================================================= */
+
+/* ---------- Descripción del plato (RF-QR-02) ---------- */
+.plato-descripcion {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: #5F5F5F;            /* gris oscuro: 6:1 de contraste sobre blanco (WCAG AA) */
+}
+
+/* En un plato agotado, la descripción no va tachada (solo el nombre) */
+.plato--agotado .plato-descripcion {
+  text-decoration: none;
+}
+
+/* ---------- Confirmación después de enviar ---------- */
+.qr-enviado {
+  margin: 32px auto;
+  max-width: 420px;
+  padding: 32px 20px;
+  text-align: center;
+  background: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Tilde grande dentro de un círculo verde */
+.qr-enviado__icono {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 2.5rem;
+  line-height: 1;
+  color: #FFFFFF;
+  background: var(--color-exito, #55692F);   /* verde oscurecido: 6,1:1 con letra blanca */
+}
+
+.qr-enviado h2 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  color: var(--color-primario, #3D6570);
+}
+
+.qr-enviado p {
+  margin: 0 0 24px;
+  line-height: 1.4;
+}
+
+/* El botón ocupa todo el ancho en celular: más fácil de tocar */
+.qr-enviado .boton-seguir {
+  width: 100%;
+  min-height: 48px;
+}
