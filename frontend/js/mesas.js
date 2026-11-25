@@ -1,9 +1,11 @@
 /* =========================================================
-   mesas.js — Pantalla de mesas (RF-MES)
+   mesas.js — Pantalla de mesas (RF-MES) + pedidos por QR (RF-QR)
    ---------------------------------------------------------
    Muestra las mesas del salón con su estado (libre, ocupada,
-   cuenta pedida). La usan el mozo, recepción y el encargado.
+   cuenta pedida). La usan el mozo y el encargado.
    Al tocar una mesa se abre un panel:
+     - con pedido QR esperando → revisarlo y enviarlo a cocina
+                                 o descartarlo (Inc. 2)
      - libre         → cuántas personas → pantalla de pedido
      - ocupada       → ver pedidos, agregar pedido, pedir cuenta
      - cuenta pedida → solo ver (el cobro es de Caja, Inc. 3)
@@ -43,6 +45,7 @@ sessionStorage.removeItem('rest_aviso_mesas');
 // Elementos de la página que usamos varias veces
 const grillaMesas = document.getElementById('grilla-mesas');
 const mensaje = document.getElementById('mensaje');
+const avisoQr = document.getElementById('aviso-qr');
 const panelFondo = document.getElementById('panel-fondo');
 const panelTitulo = document.getElementById('panel-titulo');
 
@@ -62,10 +65,28 @@ const errorOcupada = document.getElementById('error-ocupada');
 const btnAgregar = document.getElementById('btn-agregar');
 const btnPedirCuenta = document.getElementById('btn-pedir-cuenta');
 
+// Vista de pedido por QR (Inc. 2)
+const vistaQr = document.getElementById('vista-qr');
+const formQr = document.getElementById('form-qr');
+const qrHora = document.getElementById('qr-hora');
+const cargandoQr = document.getElementById('cargando-qr');
+const listaQr = document.getElementById('lista-qr');
+const totalQr = document.getElementById('total-qr');
+const qrPersonas = document.getElementById('qr-personas');
+const inputQrPersonas = document.getElementById('input-qr-personas');
+const errorQr = document.getElementById('error-qr');
+const btnQrConfirmar = document.getElementById('btn-qr-confirmar');
+const btnQrDescartar = document.getElementById('btn-qr-descartar');
+
 // Estado de la pantalla
 let mesasActuales = [];       // última lista recibida de api.js
 let mesaSeleccionada = null;  // la mesa del panel abierto
 let confirmandoCuenta = false; // true después del primer toque en "Pedir cuenta"
+
+// Estado del pedido QR abierto en el panel
+let pedidoQrAbierto = null;      // el pedido QR que se está revisando
+let resolviendoQr = false;       // true mientras se confirma o descarta (evita doble toque)
+let confirmandoDescarte = false; // true después del primer toque en "Descartar"
 
 // Actualización automática
 let temporizador = null;    // el setTimeout de la próxima actualización
@@ -91,7 +112,7 @@ function iniciarPantalla() {
     location.href = '../index.html';
   });
 
-    // El ABM del menú es solo del encargado: a los demás no les mostramos el botón.
+  // El ABM del menú es solo del encargado: a los demás no les mostramos el botón.
   // Ocultarlo es solo interfaz: igual menu.html usa exigirRol(['encargado'])
   // y el backend tiene que rechazar las rutas del menú para otros roles.
   if (sesion.usuario.rol === 'encargado') {
@@ -104,6 +125,11 @@ function iniciarPantalla() {
   formPersonas.addEventListener('submit', tomarPedido);
   btnAgregar.addEventListener('click', agregarPedido);
   btnPedirCuenta.addEventListener('click', pedirCuenta);
+
+  // Pedido por QR: "Enviar a cocina" es el submit del formulario
+  // (así también funciona la tecla Enter / "Ir" del teclado del celular)
+  formQr.addEventListener('submit', confirmarQr);
+  btnQrDescartar.addEventListener('click', descartarQr);
 
   // Formas de cerrar el panel: botones con data-cerrar
   // o tocar el fondo oscuro de afuera
@@ -164,12 +190,15 @@ async function cargarMesas() {
     mesasActuales = mesas;
 
     // Solo redibujamos si algo cambió: así la pantalla no
-    // "parpadea" cada 10 segundos sin motivo
+    // "parpadea" cada 10 segundos sin motivo.
+    // (pedidos_qr viene dentro de cada mesa: si llega un pedido QR,
+    //  el texto cambia y se redibuja con el aviso)
     const texto = JSON.stringify(mesas);
     if (texto !== ultimoDibujo) {
       dibujarMesas(mesas);
       ultimoDibujo = texto;
     }
+    actualizarAvisoQr(mesas);
 
     // Si venimos de enviar un pedido, lo mostramos una vez.
     // Se va solo en la próxima actualización (10 s).
@@ -231,8 +260,45 @@ function dibujarMesas(mesas) {
     estado.textContent = TEXTO_ESTADO[mesa.estado] || mesa.estado;
 
     tarjeta.append(numero, estado);
+
+    // PEDIDO POR QR: aviso en la tarjeta (con texto, no solo color,
+    // por accesibilidad: igual que en cocina)
+    if (mesa.pedidos_qr > 0) {
+      tarjeta.classList.add('mesa--qr');
+      const qr = document.createElement('span');
+      qr.className = 'mesa__qr';
+      qr.textContent = '📱 Pedido QR';
+      tarjeta.append(qr);
+    }
+
     grillaMesas.append(tarjeta);
   }
+}
+
+/* ---------------------------------------------------------
+   PEDIDO POR QR: franja arriba de la grilla con las mesas que
+   tienen un pedido QR esperando. El mozo mira el celular rápido
+   entre mesa y mesa: así no tiene que revisar las 12 tarjetas.
+   --------------------------------------------------------- */
+function actualizarAvisoQr(mesas) {
+  const conQr = mesas
+    .filter(m => m.pedidos_qr > 0)
+    .sort((a, b) => a.numero - b.numero)
+    .map(m => 'Mesa ' + m.numero);
+
+  if (conQr.length === 0) {
+    avisoQr.hidden = true;
+    avisoQr.textContent = '';
+    return;
+  }
+
+  const texto = (conQr.length === 1
+    ? '📱 Pedido por QR esperando: '
+    : '📱 Pedidos por QR esperando: ') + conQr.join(', ');
+
+  // Solo cambiamos el texto si es distinto (aria-live lo leería de nuevo)
+  if (avisoQr.textContent !== texto) avisoQr.textContent = texto;
+  avisoQr.hidden = false;
 }
 
 /* ---------------------------------------------------------
@@ -257,12 +323,17 @@ function abrirPanel(mesa) {
   panelTitulo.textContent = 'Mesa ' + mesa.numero + ' · ' +
     (TEXTO_ESTADO[mesa.estado] || mesa.estado);
 
-  // Mostramos solo la vista que corresponde al estado
+  // Mostramos solo la vista que corresponde
   vistaLibre.hidden = true;
   vistaOcupada.hidden = true;
+  vistaQr.hidden = true;
   panelFondo.hidden = false;
 
-  if (mesa.estado === 'libre') {
+  // Si hay un pedido QR esperando, eso es lo primero: el cliente
+  // está esperando que su pedido llegue a cocina
+  if (mesa.pedidos_qr > 0) {
+    abrirVistaQr(mesa);
+  } else if (mesa.estado === 'libre') {
     abrirVistaLibre();
   } else {
     abrirVistaOcupada(mesa);
@@ -270,11 +341,18 @@ function abrirPanel(mesa) {
 }
 
 function cerrarPanel() {
+  // Mientras se confirma o descarta un pedido QR no se cierra:
+  // así el mozo siempre ve cómo terminó
+  if (resolviendoQr) return;
+
   panelFondo.hidden = true;
   vistaLibre.hidden = true;
   vistaOcupada.hidden = true;
+  vistaQr.hidden = true;
   mesaSeleccionada = null;
+  pedidoQrAbierto = null;
   reiniciarBotonCuenta();
+  reiniciarBotonDescartar();
 }
 
 /* =========================================================
@@ -449,6 +527,213 @@ function reiniciarBotonCuenta() {
   btnPedirCuenta.textContent = 'Pedir cuenta';
 }
 
+/* =========================================================
+   PEDIDO POR QR (Inc. 2 – RF-QR-05)
+   El pedido del cliente llega primero al mozo: lo revisa y lo
+   envía a cocina (si la mesa está libre, carga las personas y
+   ahí se abre la mesa) o lo descarta.
+   ========================================================= */
+async function abrirVistaQr(mesa) {
+  panelTitulo.textContent = 'Mesa ' + mesa.numero + ' · Pedido por QR';
+
+  // Limpiamos lo que haya quedado de la vez anterior
+  pedidoQrAbierto = null;
+  qrHora.textContent = '';
+  listaQr.textContent = '';
+  totalQr.textContent = formatoPesos(0);
+  inputQrPersonas.value = '';
+  qrPersonas.hidden = true;
+  errorQr.hidden = true;
+  btnQrConfirmar.hidden = false;
+  btnQrConfirmar.disabled = true;   // hasta que cargue el pedido
+  btnQrDescartar.disabled = true;
+  reiniciarBotonDescartar();
+  cargandoQr.hidden = false;
+  vistaQr.hidden = false;
+
+  try {
+    const pedidosQr = await obtenerPedidosQr();
+
+    // El mozo pudo cerrar el panel o tocar otra mesa mientras esperábamos
+    if (!mesaSeleccionada || mesaSeleccionada.id !== mesa.id) return;
+
+    const pedidoQr = pedidosQr.find(p => p.mesa_id === mesa.id);
+    if (!pedidoQr) {
+      // Otro mozo lo confirmó o descartó hace un momento
+      cerrarPanel();
+      avisoPendiente = 'El pedido QR de la Mesa ' + mesa.numero + ' ya lo resolvió otro mozo.';
+      actualizar();
+      return;
+    }
+
+    mostrarPedidoQr(pedidoQr);
+  } catch (error) {
+    manejarError(error, mostrarErrorQr);
+  } finally {
+    cargandoQr.hidden = true;
+  }
+}
+
+/* Dibuja el pedido QR en el panel.
+   El total es ESTIMADO: usa el precio actual del menú. El precio
+   definitivo lo guarda el backend al confirmar (RF-MEN-04). */
+function mostrarPedidoQr(pedidoQr) {
+  pedidoQrAbierto = pedidoQr;
+  qrHora.textContent = 'Llegó a las ' + formatearHora(pedidoQr.creado_en);
+
+  listaQr.textContent = '';
+  const li = document.createElement('li');
+  li.className = 'pedido';
+  const ul = document.createElement('ul');
+  ul.className = 'pedido__items';
+
+  let total = 0;
+  for (const item of pedidoQr.items) {
+    const subtotal = item.cantidad * item.precio;
+    total += subtotal;
+
+    const liItem = document.createElement('li');
+    liItem.textContent = item.cantidad + ' × ' + item.nombre +
+      ' — ' + formatoPesos(subtotal);
+
+    if (item.observaciones) {
+      const obs = document.createElement('span');
+      obs.className = 'pedido__obs';
+      obs.textContent = item.observaciones;
+      liItem.append(obs);
+    }
+    ul.append(liItem);
+  }
+  li.append(ul);
+  listaQr.append(li);
+  totalQr.textContent = formatoPesos(total);
+
+  // Mesa libre: hay que cargar las personas (al confirmar se abre la mesa)
+  qrPersonas.hidden = !pedidoQr.mesa_libre;
+
+  // Si la mesa ya pidió la cuenta, el pedido solo se puede descartar
+  const mesa = mesasActuales.find(m => m.id === pedidoQr.mesa_id);
+  if (mesa && mesa.estado === 'cuenta_pedida') {
+    btnQrConfirmar.hidden = true;
+    mostrarErrorQr('Esta mesa ya pidió la cuenta: el pedido no se puede enviar a cocina. Descartalo y, si hace falta, hablá con el encargado.');
+  }
+
+  btnQrConfirmar.disabled = false;
+  btnQrDescartar.disabled = false;
+
+  if (pedidoQr.mesa_libre) inputQrPersonas.focus(); // teclado numérico en el celular
+}
+
+// "Enviar a cocina"
+async function confirmarQr(evento) {
+  evento.preventDefault(); // que el formulario no recargue la página
+  if (resolviendoQr || !pedidoQrAbierto) return;
+
+  const pedidoQr = pedidoQrAbierto;
+  let personas;
+
+  // Las personas solo se piden si la mesa está libre.
+  // El backend valida lo mismo (el frontend se puede saltear).
+  if (pedidoQr.mesa_libre) {
+    personas = Number(inputQrPersonas.value);
+    if (!Number.isInteger(personas) || personas < 1 || personas > MAX_PERSONAS) {
+      mostrarErrorQr('Ingresá cuántas personas hay en la mesa (entre 1 y ' + MAX_PERSONAS + ').');
+      inputQrPersonas.focus();
+      return;
+    }
+  }
+
+  resolviendoQr = true;
+  errorQr.hidden = true;
+  btnQrConfirmar.disabled = true;
+  btnQrDescartar.disabled = true;
+  btnQrConfirmar.textContent = 'Enviando…';
+
+  try {
+    await confirmarPedidoQr(pedidoQr.id, personas);
+    resolviendoQr = false;
+    btnQrConfirmar.textContent = 'Enviar a cocina';
+    terminarQr('Pedido QR de la Mesa ' + pedidoQr.mesa_numero + ' enviado a cocina ✔');
+  } catch (error) {
+    resolviendoQr = false;
+    btnQrConfirmar.textContent = 'Enviar a cocina';
+    await revisarErrorQr(error);
+  }
+}
+
+/* "Descartar pedido" con confirmación en dos toques (como "Pedir cuenta"):
+   no se puede deshacer y el cliente tendría que volver a pedir. */
+async function descartarQr() {
+  if (resolviendoQr || !pedidoQrAbierto) return;
+
+  if (!confirmandoDescarte) {
+    confirmandoDescarte = true;
+    btnQrDescartar.textContent = '¿Seguro? Tocá de nuevo para descartar';
+    return;
+  }
+
+  const pedidoQr = pedidoQrAbierto;
+  resolviendoQr = true;
+  errorQr.hidden = true;
+  btnQrConfirmar.disabled = true;
+  btnQrDescartar.disabled = true;
+
+  try {
+    await descartarPedidoQr(pedidoQr.id);
+    resolviendoQr = false;
+    terminarQr('Pedido QR de la Mesa ' + pedidoQr.mesa_numero + ' descartado');
+  } catch (error) {
+    resolviendoQr = false;
+    reiniciarBotonDescartar();
+    await revisarErrorQr(error);
+  }
+}
+
+// Confirmado o descartado: cerramos y actualizamos la grilla ya
+// (sin esperar 10 s). El aviso se muestra en la próxima carga.
+function terminarQr(textoAviso) {
+  cerrarPanel();
+  avisoPendiente = textoAviso;
+  actualizar();
+}
+
+/* Si falló confirmar o descartar, nos fijamos si el pedido SIGUE
+   en la bandeja:
+   - Ya no está → lo resolvió otro mozo: cerramos con un aviso.
+   - Sigue      → mostramos el error (por ejemplo, un plato agotado)
+                  y dejamos el pedido abierto para que decida. */
+async function revisarErrorQr(error) {
+  if (error.estado === 401) {
+    manejarError(error, mostrarErrorQr);
+    return;
+  }
+
+  let sigue = null;
+  try {
+    const pedidosQr = await obtenerPedidosQr();
+    sigue = pedidosQr.find(p => pedidoQrAbierto && p.id === pedidoQrAbierto.id) || null;
+  } catch (e) {
+    // Sin conexión: no sabemos. Dejamos el pedido abierto con el error.
+    sigue = pedidoQrAbierto;
+  }
+
+  if (!sigue) {
+    const numero = pedidoQrAbierto ? pedidoQrAbierto.mesa_numero : '';
+    terminarQr('El pedido QR de la Mesa ' + numero + ' ya lo resolvió otro mozo.');
+    return;
+  }
+
+  mostrarPedidoQr(sigue);   // por si cambió algo (por ejemplo, la mesa ya no está libre)
+  mostrarErrorQr(error.message);
+}
+
+// Deja el botón "Descartar pedido" como al principio
+function reiniciarBotonDescartar() {
+  confirmandoDescarte = false;
+  btnQrDescartar.disabled = false;
+  btnQrDescartar.textContent = 'Descartar pedido';
+}
+
 /* ---------- Mensajes al usuario ---------- */
 function mostrarError(texto) {
   mensaje.textContent = texto;
@@ -470,4 +755,9 @@ function ocultarMensaje() {
 function mostrarErrorOcupada(texto) {
   errorOcupada.textContent = texto;
   errorOcupada.hidden = false;
+}
+
+function mostrarErrorQr(texto) {
+  errorQr.textContent = texto;
+  errorQr.hidden = false;
 }

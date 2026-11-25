@@ -1,11 +1,18 @@
 /* =========================================================
-   qr.css — Estilos SOLO de la pantalla del cliente (qr.html)
+   qr.css — Estilos del PEDIDO POR QR (Inc. 2)
    ---------------------------------------------------------
+   Lo usan dos pantallas:
+   - qr.html    (cliente): descripción de platos y confirmación
+   - mesas.html (mozo):    aviso en la tarjeta, franja y panel
    Se carga DESPUÉS de estilos.css: reusa todas sus clases
-   (plato, barra-pedido, pedido-panel...) y acá agrega solo
-   lo nuevo de esta pantalla. Así no tocamos estilos.css,
-   que ya está probado con el Inc. 1.
+   (plato, barra-pedido, panel, mesa...) y acá agrega solo
+   lo nuevo del QR. Así no tocamos estilos.css, que ya está
+   probado con el Inc. 1.
    Los var() llevan el color de la paleta como respaldo.
+   ========================================================= */
+
+/* =========================================================
+   PANTALLA DEL CLIENTE (qr.html)
    ========================================================= */
 
 /* ---------- Descripción del plato (RF-QR-02) ---------- */
@@ -63,4 +70,70 @@
 .qr-enviado .boton-seguir {
   width: 100%;
   min-height: 48px;
+}
+
+/* =========================================================
+   PANTALLA DEL MOZO (mesas.html)
+   Azul de la paleta para todo lo del QR: verde, amarillo y rojo
+   ya significan libre, ocupada y cuenta pedida, así que el aviso
+   no se confunde con un estado de la mesa.
+   ========================================================= */
+
+/* ---------- Franja "📱 Pedido por QR esperando: Mesa 5" ---------- */
+.aviso-qr {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #FFFFFF;
+  background: var(--color-primario, #3D6570);   /* 6,4:1 con letra blanca */
+}
+
+/* ---------- Tarjeta de mesa con pedido QR esperando ---------- */
+.mesa--qr {
+  /* Anillo azul por FUERA del borde de color del estado:
+     se sigue viendo si la mesa está libre u ocupada */
+  box-shadow: 0 0 0 3px var(--color-primario, #3D6570);
+  animation: qr-latido 1.6s ease-in-out infinite;
+}
+
+/* Etiqueta "📱 Pedido QR" dentro de la tarjeta */
+.mesa__qr {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #FFFFFF;
+  background: var(--color-primario, #3D6570);
+}
+
+/* El anillo "late" suave para llamar la atención del mozo */
+@keyframes qr-latido {
+  0%, 100% { box-shadow: 0 0 0 3px var(--color-primario, #3D6570); }
+  50%      { box-shadow: 0 0 0 6px rgba(61, 101, 112, 0.35); }
+}
+
+/* Si el celular tiene "reducir movimiento", sin animación
+   (mismo criterio que en cocina). El anillo queda fijo. */
+@media (prefers-reduced-motion: reduce) {
+  .mesa--qr {
+    animation: none;
+  }
+}
+
+/* ---------- Panel del pedido QR ---------- */
+/* "Llegó a las 21:15": dato secundario, más chico y gris */
+.qr-mozo__hora {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: #5F5F5F;
+}
+
+/* El campo de personas se separa un poco de la lista */
+#qr-personas {
+  margin-top: 12px;
 }

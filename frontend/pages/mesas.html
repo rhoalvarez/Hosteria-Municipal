@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#3D6570">
   <title>Mesas · Portal de la Luna</title>
   <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Estilos del pedido por QR (Inc. 2): aviso en la tarjeta y panel del mozo -->
+  <link rel="stylesheet" href="../css/qr.css">
   <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
        Cuando tengamos el logo, se cambia por assets/logo.png -->
   <link rel="icon" href="data:,">
@@ -16,7 +18,7 @@
       <h1 class="encabezado__titulo">Mesas</h1>
       <span id="nombre-usuario" class="encabezado__usuario"></span>
     </div>
-        <div class="encabezado__acciones">
+    <div class="encabezado__acciones">
       <!-- Solo lo ve el encargado: mesas.js le saca el hidden.
            Arranca oculto para que el mozo no lo vea ni un instante -->
       <a id="enlace-menu" href="menu.html" class="boton boton--secundario" hidden>Menú</a>
@@ -30,14 +32,19 @@
       <span class="leyenda__item"><span class="leyenda__color leyenda__color--libre"></span>Libre</span>
       <span class="leyenda__item"><span class="leyenda__color leyenda__color--ocupada"></span>Ocupada</span>
       <span class="leyenda__item"><span class="leyenda__color leyenda__color--cuenta"></span>Cuenta pedida</span>
+      <span class="leyenda__item">📱 Pedido por QR</span>
     </div>
 
     <!-- Mensajes para el usuario: "Cargando...", errores de conexión -->
     <p id="mensaje" class="mensaje" role="status">Cargando mesas...</p>
 
+    <!-- Franja de pedidos QR esperando al mozo (Inc. 2). La llena mesas.js -->
+    <p id="aviso-qr" class="aviso-qr" role="status" aria-live="polite" hidden></p>
+
     <!-- Acá mesas.js dibuja una tarjeta por cada mesa -->
     <div id="grilla-mesas" class="grilla-mesas"></div>
   </main>
+
   <!-- Panel que aparece al tocar una mesa (oculto al inicio) -->
   <div id="panel-fondo" class="panel-fondo" hidden>
     <section class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-titulo">
@@ -57,6 +64,7 @@
           </div>
         </form>
       </div>
+
       <!-- Vista para mesa OCUPADA o CUENTA PEDIDA -->
       <div id="vista-ocupada" hidden>
         <p id="cargando-pedidos" class="mensaje">Cargando pedidos...</p>
@@ -76,8 +84,37 @@
           Pedir cuenta
         </button>
       </div>
+
+      <!-- Vista de PEDIDO POR QR (Inc. 2 – RF-QR-05): el mozo lo revisa
+           y lo envía a cocina o lo descarta. Se muestra en lugar de las
+           otras vistas cuando la mesa tiene un pedido QR esperando. -->
+      <div id="vista-qr" hidden>
+        <form id="form-qr" novalidate>
+          <p id="qr-hora" class="qr-mozo__hora"></p>
+          <p id="cargando-qr" class="mensaje">Cargando pedido...</p>
+          <ul id="lista-qr" class="lista-pedidos"></ul>
+          <p class="total-mesa">Total estimado: <strong id="total-qr">$ 0</strong></p>
+
+          <!-- Solo si la mesa está LIBRE: al confirmar se abre la mesa -->
+          <div id="qr-personas" class="campo" hidden>
+            <label for="input-qr-personas">¿Cuántas personas hay en la mesa?</label>
+            <input id="input-qr-personas" type="number" inputmode="numeric" min="1" max="20">
+          </div>
+
+          <p id="error-qr" class="mensaje mensaje--error" role="alert" hidden></p>
+
+          <div class="panel__acciones">
+            <button type="button" class="boton boton--secundario" data-cerrar>Cerrar</button>
+            <button type="submit" id="btn-qr-confirmar" class="boton boton--primario">Enviar a cocina</button>
+          </div>
+          <button type="button" id="btn-qr-descartar" class="boton boton--peligro boton--bloque panel__boton-cuenta">
+            Descartar pedido
+          </button>
+        </form>
+      </div>
     </section>
   </div>
+
   <!-- El orden importa: api.js usa funciones de sesion.js,
        y mesas.js usa funciones de sesion.js, api.js y formato.js -->
   <script src="../js/sesion.js"></script>
