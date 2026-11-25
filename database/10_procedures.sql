@@ -28,7 +28,32 @@ CREATE PROCEDURE sp_menu_listar(IN p_solo_activos BOOLEAN) BEGIN SELECT i.id_ite
 DROP PROCEDURE IF EXISTS sp_menu_crear$$
 CREATE PROCEDURE sp_menu_crear(IN p_codigo VARCHAR(20),IN p_categoria INT UNSIGNED,IN p_nombre VARCHAR(100),IN p_descripcion VARCHAR(255),IN p_precio DECIMAL(10,2)) BEGIN INSERT INTO rest_item_menu(codigo,id_categoria,nombre,descripcion,precio) VALUES(p_codigo,p_categoria,p_nombre,p_descripcion,p_precio); SELECT LAST_INSERT_ID() AS id_item; END$$
 DROP PROCEDURE IF EXISTS sp_mesa_listar$$
-CREATE PROCEDURE sp_mesa_listar() BEGIN SELECT m.id_mesa,m.numero,m.capacidad,m.codigo_qr,m.activa,EXISTS(SELECT 1 FROM rest_comanda c WHERE c.id_mesa=m.id_mesa AND c.estado='ABIERTA') AS ocupada FROM rest_mesa m ORDER BY m.numero; END$$
+CREATE PROCEDURE sp_mesa_listar()
+BEGIN
+    SELECT
+        m.id_mesa,
+        m.numero,
+        m.capacidad,
+        m.codigo_qr,
+        m.activa,
+
+        EXISTS(
+            SELECT 1
+            FROM rest_comanda c
+            WHERE c.id_mesa = m.id_mesa
+              AND c.estado = 'ABIERTA'
+        ) AS ocupada,
+
+        (
+            SELECT COUNT(*)
+            FROM rest_pedido_qr qr
+            WHERE qr.id_mesa = m.id_mesa
+              AND qr.estado = 'POR_CONFIRMAR'
+        ) AS pedidos_qr
+
+    FROM rest_mesa m
+    ORDER BY m.numero;
+END$$
 DROP PROCEDURE IF EXISTS sp_mesa_crear$$
 CREATE PROCEDURE sp_mesa_crear(IN p_numero INT UNSIGNED,IN p_capacidad TINYINT UNSIGNED,IN p_qr VARCHAR(255)) BEGIN INSERT INTO rest_mesa(numero,capacidad,codigo_qr) VALUES(p_numero,p_capacidad,p_qr); SELECT LAST_INSERT_ID() AS id_mesa; END$$
 

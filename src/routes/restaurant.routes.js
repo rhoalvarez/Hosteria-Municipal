@@ -5,6 +5,28 @@ const c = require("../controllers/restaurant.controller");
 const auth = require("../middlewares/auth");
 const roles = require("../middlewares/roles");
 
+// =====================================================
+// PEDIDOS QR PÚBLICOS
+// No requieren iniciar sesión.
+// =====================================================
+
+// Consultar menú y mesa mediante el código QR
+router.get(
+  "/qr/:codigo/menu",
+  asyncHandler(c.qrMenu)
+);
+
+// Enviar pedido desde el celular del cliente
+router.post(
+  "/qr/:codigo/pedidos",
+  asyncHandler(c.qrCrearPedido)
+);
+
+// =====================================================
+// RUTAS PROTEGIDAS
+// Requieren autenticación.
+// =====================================================
+
 router.use(auth);
 
 // =====================================================
@@ -25,7 +47,7 @@ router.post(
   asyncHandler(c.abrirComanda)
 );
 
-// Crear comanda y primer pedido en una sola transacción
+// Crear comanda y primer pedido
 router.post(
   "/comandas/primer-pedido",
   roles("ENCARGADO", "MOZO"),
@@ -55,6 +77,32 @@ router.patch(
   "/pedidos/:id/estado",
   roles("ENCARGADO", "COCINA"),
   asyncHandler(c.estadoPedido)
+);
+
+// =====================================================
+// PEDIDOS QR PARA EL MOZO
+// Rutas solicitadas por Luján.
+// =====================================================
+
+// Listar pedidos QR pendientes
+router.get(
+  "/pedidos-qr",
+  roles("ENCARGADO", "MOZO"),
+  asyncHandler(c.qrPedidosPendientes)
+);
+
+// Confirmar pedido QR
+router.post(
+  "/pedidos-qr/:id/confirmar",
+  roles("ENCARGADO", "MOZO"),
+  asyncHandler(c.qrResolverPedido)
+);
+
+// Descartar pedido QR
+router.post(
+  "/pedidos-qr/:id/descartar",
+  roles("ENCARGADO", "MOZO"),
+  asyncHandler(c.qrDescartarPedido)
 );
 
 // =====================================================

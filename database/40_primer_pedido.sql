@@ -46,7 +46,7 @@ BEGIN
         SET MESSAGE_TEXT = 'UID obligatorio';
     END IF;
 
-    IF p_origen IS NULL OR p_origen NOT IN ('SALON', 'MOSTRADOR') THEN
+    IF p_origen IS NULL OR p_origen NOT IN ('SALON', 'MOSTRADOR', 'QR') THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Origen invalido';
     END IF;

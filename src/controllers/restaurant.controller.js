@@ -1,45 +1,23 @@
-const { callProcedure } = require("../config/db");
+const crypto = require("crypto");
+const { pool, callProcedure } = require("../config/db");
 const HttpError = require("../utils/httpError");
 const audit = require("../services/audit.service");
 
 // =====================================================
-// CREAR COMANDA Y PRIMER PEDIDO EN UNA SOLA TRANSACCION
+// VALIDACIONES GENERALES
 // =====================================================
-exports.pedidoInicial = async (req, res) => {
-  const {
-    id_mesa,
-    personas,
-    uid,
-    origen = "SALON",
-    items,
-  } = req.body || {};
 
-  const mesa = Number(id_mesa);
-  const cantidadPersonas = Number(personas);
+function validarId(valor, mensaje = "ID inválido.") {
+  const id = Number(valor);
 
-  if (!Number.isInteger(mesa) || mesa <= 0) {
-    throw new HttpError(400, "Indicá una mesa válida.");
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(400, mensaje);
   }
 
-  if (
-    !Number.isInteger(cantidadPersonas) ||
-    cantidadPersonas < 1 ||
-    cantidadPersonas > 20
-  ) {
-    throw new HttpError(
-      400,
-      "La cantidad de personas debe estar entre 1 y 20."
-    );
-  }
+  return id;
+}
 
-  if (typeof uid !== "string" || !uid.trim()) {
-    throw new HttpError(400, "El UID del pedido es obligatorio.");
-  }
-
-  if (!["SALON", "MOSTRADOR"].includes(origen)) {
-    throw new HttpError(400, "El origen del pedido no es válido.");
-  }
-
+function validarItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new HttpError(400, "El pedido debe contener artículos.");
   }
@@ -73,6 +51,44 @@ exports.pedidoInicial = async (req, res) => {
       );
     }
   }
+}
+
+// =====================================================
+// CREAR COMANDA Y PRIMER PEDIDO
+// =====================================================
+
+exports.pedidoInicial = async (req, res) => {
+  const {
+    id_mesa,
+    personas,
+    uid,
+    origen = "SALON",
+    items,
+  } = req.body || {};
+
+  const mesa = validarId(id_mesa, "Indicá una mesa válida.");
+  const cantidadPersonas = Number(personas);
+
+  if (
+    !Number.isInteger(cantidadPersonas) ||
+    cantidadPersonas < 1 ||
+    cantidadPersonas > 20
+  ) {
+    throw new HttpError(
+      400,
+      "La cantidad de personas debe estar entre 1 y 20."
+    );
+  }
+
+  if (typeof uid !== "string" || !uid.trim()) {
+    throw new HttpError(400, "El UID del pedido es obligatorio.");
+  }
+
+  if (!["SALON", "MOSTRADOR", "QR"].includes(origen)) {
+    throw new HttpError(400, "El origen del pedido no es válido.");
+  }
+
+  validarItems(items);
 
   const r = await callProcedure("sp_comanda_pedido_inicial", [
     mesa,
@@ -104,17 +120,17 @@ exports.pedidoInicial = async (req, res) => {
 // =====================================================
 // ABRIR COMANDA
 // =====================================================
+
 exports.abrirComanda = async (req, res) => {
   const { id_mesa, personas } = req.body || {};
 
-  if (!Number.isInteger(Number(id_mesa)) || Number(id_mesa) <= 0) {
-    throw new HttpError(400, "Indicá una mesa válida.");
-  }
+  const mesa = validarId(id_mesa, "Indicá una mesa válida.");
+  const cantidadPersonas = Number(personas);
 
   if (
-    !Number.isInteger(Number(personas)) ||
-    Number(personas) < 1 ||
-    Number(personas) > 20
+    !Number.isInteger(cantidadPersonas) ||
+    cantidadPersonas < 1 ||
+    cantidadPersonas > 20
   ) {
     throw new HttpError(
       400,
@@ -122,10 +138,17 @@ exports.abrirComanda = async (req, res) => {
     );
   }
 
+  const [numeroRows] = await pool.query(
+    "SELECT COALESCE(MAX(numero), 0) + 1 AS numero FROM rest_comanda"
+  );
+
+  const numero = Number(numeroRows[0].numero);
+
   const r = await callProcedure("sp_comanda_abrir", [
-    Number(id_mesa),
+    numero,
+    mesa,
     req.user.id_usuario,
-    Number(personas),
+    cantidadPersonas,
   ]);
 
   await audit(
@@ -133,7 +156,10 @@ exports.abrirComanda = async (req, res) => {
     "ABRIR",
     "rest_comanda",
     r[0].id_comanda,
-    { id_mesa, personas }
+    {
+      id_mesa: mesa,
+      personas: cantidadPersonas,
+    }
   );
 
   res.status(201).json(r[0]);
@@ -142,6 +168,7 @@ exports.abrirComanda = async (req, res) => {
 // =====================================================
 // LISTAR COMANDAS ABIERTAS
 // =====================================================
+
 exports.comandasAbiertas = async (req, res) => {
   const r = await callProcedure("sp_comandas_abiertas");
   res.json(r);
@@ -150,56 +177,20 @@ exports.comandasAbiertas = async (req, res) => {
 // =====================================================
 // CREAR PEDIDO EN COMANDA EXISTENTE
 // =====================================================
+
 exports.crearPedido = async (req, res) => {
   const { uid, origen = "SALON", items } = req.body || {};
-  const idComanda = Number(req.params.id);
+  const idComanda = validarId(req.params.id, "Comanda inválida.");
 
-  if (!Number.isInteger(idComanda) || idComanda <= 0) {
-    throw new HttpError(400, "Comanda inválida.");
+  if (typeof uid !== "string" || !uid.trim()) {
+    throw new HttpError(400, "El UID del pedido es obligatorio.");
   }
 
-  if (
-    typeof uid !== "string" ||
-    !uid.trim() ||
-    !Array.isArray(items) ||
-    items.length === 0
-  ) {
-    throw new HttpError(400, "UID e ítems del pedido son obligatorios.");
-  }
-
-  if (!["SALON", "MOSTRADOR"].includes(origen)) {
+  if (!["SALON", "MOSTRADOR", "QR"].includes(origen)) {
     throw new HttpError(400, "El origen del pedido no es válido.");
   }
 
-  for (const item of items) {
-    if (
-      !Number.isInteger(Number(item.id_item)) ||
-      Number(item.id_item) <= 0
-    ) {
-      throw new HttpError(400, "Cada artículo debe tener un ID válido.");
-    }
-
-    if (
-      !Number.isInteger(Number(item.cantidad)) ||
-      Number(item.cantidad) < 1 ||
-      Number(item.cantidad) > 50
-    ) {
-      throw new HttpError(
-        400,
-        "Cada cantidad debe estar entre 1 y 50."
-      );
-    }
-
-    if (
-      item.observaciones != null &&
-      String(item.observaciones).length > 100
-    ) {
-      throw new HttpError(
-        400,
-        "Las observaciones no pueden superar los 100 caracteres."
-      );
-    }
-  }
+  validarItems(items);
 
   const r = await callProcedure("sp_pedido_crear", [
     idComanda,
@@ -214,7 +205,10 @@ exports.crearPedido = async (req, res) => {
     "CREAR",
     "rest_pedido",
     r[0].id_pedido,
-    { id_comanda: idComanda, uid }
+    {
+      id_comanda: idComanda,
+      uid,
+    }
   );
 
   res.status(201).json(r[0]);
@@ -223,18 +217,15 @@ exports.crearPedido = async (req, res) => {
 // =====================================================
 // CAMBIAR ESTADO DE PEDIDO
 // =====================================================
+
 exports.estadoPedido = async (req, res) => {
   const { estado } = req.body || {};
-  const idPedido = Number(req.params.id);
-
-  if (!Number.isInteger(idPedido) || idPedido <= 0) {
-    throw new HttpError(400, "Pedido inválido.");
-  }
+  const idPedido = validarId(req.params.id, "Pedido inválido.");
 
   if (!["ENVIADO", "CANCELADO"].includes(estado)) {
     throw new HttpError(
       400,
-      "Para marcar como listo utilizá la ruta específica. Estado inválido."
+      "Para marcar como listo utilizá la ruta específica."
     );
   }
 
@@ -258,20 +249,21 @@ exports.estadoPedido = async (req, res) => {
     { estado }
   );
 
-  res.json({ mensaje: "Estado actualizado correctamente." });
+  res.json({
+    mensaje: "Estado actualizado correctamente.",
+  });
 };
 
 // =====================================================
 // DETALLE DE UN PEDIDO
 // =====================================================
+
 exports.detallePedido = async (req, res) => {
-  const idPedido = Number(req.params.id);
+  const idPedido = validarId(req.params.id, "Pedido inválido.");
 
-  if (!Number.isInteger(idPedido) || idPedido <= 0) {
-    throw new HttpError(400, "Pedido inválido.");
-  }
-
-  const r = await callProcedure("sp_pedido_detalle", [idPedido]);
+  const r = await callProcedure("sp_pedido_detalle", [
+    idPedido,
+  ]);
 
   if (!r.length) {
     throw new HttpError(404, "Pedido no encontrado.");
@@ -281,8 +273,9 @@ exports.detallePedido = async (req, res) => {
 };
 
 // =====================================================
-// LISTAR PEDIDOS PENDIENTES DE COCINA
+// PEDIDOS PENDIENTES DE COCINA
 // =====================================================
+
 exports.pedidosCocina = async (req, res) => {
   const r = await callProcedure("sp_cocina_pedidos");
   res.json(r);
@@ -291,12 +284,9 @@ exports.pedidosCocina = async (req, res) => {
 // =====================================================
 // MARCAR PEDIDO COMO LISTO
 // =====================================================
-exports.marcarListo = async (req, res) => {
-  const idPedido = Number(req.params.id);
 
-  if (!Number.isInteger(idPedido) || idPedido <= 0) {
-    throw new HttpError(400, "Pedido inválido.");
-  }
+exports.marcarListo = async (req, res) => {
+  const idPedido = validarId(req.params.id, "Pedido inválido.");
 
   const r = await callProcedure("sp_pedido_marcar_listo", [
     idPedido,
@@ -316,18 +306,20 @@ exports.marcarListo = async (req, res) => {
     idPedido
   );
 
-  res.json({ mensaje: "Pedido marcado como listo." });
+  res.json({
+    mensaje: "Pedido marcado como listo.",
+  });
 };
 
 // =====================================================
 // SOLICITAR CUENTA
 // =====================================================
-exports.pedirCuenta = async (req, res) => {
-  const idComanda = Number(req.params.id);
 
-  if (!Number.isInteger(idComanda) || idComanda <= 0) {
-    throw new HttpError(400, "Comanda inválida.");
-  }
+exports.pedirCuenta = async (req, res) => {
+  const idComanda = validarId(
+    req.params.id,
+    "Comanda inválida."
+  );
 
   const r = await callProcedure("sp_comanda_pedir_cuenta", [
     idComanda,
@@ -347,22 +339,558 @@ exports.pedirCuenta = async (req, res) => {
     idComanda
   );
 
-  res.json({ mensaje: "Cuenta solicitada correctamente." });
+  res.json({
+    mensaje: "Cuenta solicitada correctamente.",
+  });
 };
 
 // =====================================================
 // CONSULTAR PEDIDOS DE UNA MESA
 // =====================================================
-exports.pedidosMesa = async (req, res) => {
-  const idMesa = Number(req.params.id);
 
-  if (!Number.isInteger(idMesa) || idMesa <= 0) {
-    throw new HttpError(400, "Mesa inválida.");
-  }
+exports.pedidosMesa = async (req, res) => {
+  const idMesa = validarId(req.params.id, "Mesa inválida.");
 
   const r = await callProcedure("sp_mesa_pedidos", [
     idMesa,
   ]);
 
   res.json(r);
+};
+
+// =====================================================
+// QR: MENÚ PÚBLICO
+// =====================================================
+
+exports.qrMenu = async (req, res) => {
+  const codigo = String(req.params.codigo || "").trim();
+
+  if (!codigo) {
+    throw new HttpError(400, "Código QR inválido.");
+  }
+
+  const [mesas] = await pool.query(
+    `SELECT id_mesa, numero, activa
+     FROM rest_mesa
+     WHERE codigo_qr = ?
+     LIMIT 1`,
+    [codigo]
+  );
+
+  if (!mesas.length || !mesas[0].activa) {
+    throw new HttpError(404, "La mesa no existe o está inactiva.");
+  }
+
+  const [categorias] = await pool.query(
+    `SELECT DISTINCT c.id_categoria, c.nombre
+     FROM rest_categoria c
+     INNER JOIN rest_item_menu i
+       ON i.id_categoria = c.id_categoria
+     WHERE c.activa = 1
+       AND i.activo = 1
+     ORDER BY c.nombre`
+  );
+
+  const [menu] = await pool.query(
+    `SELECT
+        i.id_item,
+        i.codigo,
+        i.id_categoria,
+        c.nombre AS categoria,
+        i.nombre,
+        i.descripcion,
+        i.precio,
+        i.agotado
+     FROM rest_item_menu i
+     INNER JOIN rest_categoria c
+       ON c.id_categoria = i.id_categoria
+     WHERE i.activo = 1
+       AND c.activa = 1
+     ORDER BY c.nombre, i.nombre`
+  );
+
+  res.json({
+    mesa: {
+      id_mesa: mesas[0].id_mesa,
+      numero: mesas[0].numero,
+    },
+    categorias,
+    menu,
+  });
+};
+
+// =====================================================
+// QR: EL CLIENTE ENVÍA SU PEDIDO
+// NO SE ENVÍA A COCINA HASTA QUE CONFIRME EL MOZO
+// =====================================================
+
+exports.qrCrearPedido = async (req, res) => {
+  const codigo = String(req.params.codigo || "").trim();
+  const { uid, items } = req.body || {};
+
+  if (!codigo) {
+    throw new HttpError(400, "Código QR inválido.");
+  }
+
+  if (typeof uid !== "string" || !uid.trim()) {
+    throw new HttpError(400, "El UID del pedido es obligatorio.");
+  }
+
+  validarItems(items);
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const [mesas] = await connection.query(
+      `SELECT id_mesa, numero, activa
+       FROM rest_mesa
+       WHERE codigo_qr = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [codigo]
+    );
+
+    if (!mesas.length || !mesas[0].activa) {
+      throw new HttpError(404, "La mesa no existe o está inactiva.");
+    }
+
+    const idMesa = Number(mesas[0].id_mesa);
+
+    // Evitar duplicados por reintentos del cliente.
+    const [existentes] = await connection.query(
+      `SELECT id_pedido_qr, estado
+       FROM rest_pedido_qr
+       WHERE uid = ?
+       LIMIT 1`,
+      [uid.trim()]
+    );
+
+    if (existentes.length) {
+      await connection.commit();
+
+      return res.status(200).json({
+        mensaje: "Este pedido QR ya fue recibido.",
+        ...existentes[0],
+      });
+    }
+
+    // Solo un pedido QR pendiente por mesa.
+    const [pendientes] = await connection.query(
+      `SELECT id_pedido_qr
+       FROM rest_pedido_qr
+       WHERE mesa_esperando = ?
+         AND estado = 'POR_CONFIRMAR'
+       LIMIT 1
+       FOR UPDATE`,
+      [idMesa]
+    );
+
+    if (pendientes.length) {
+      throw new HttpError(
+        409,
+        "La mesa ya tiene un pedido QR esperando al mozo."
+      );
+    }
+
+    // Verificar que todos los productos estén disponibles.
+    for (const item of items) {
+      const [disponibles] = await connection.query(
+        `SELECT id_item
+         FROM rest_item_menu
+         WHERE id_item = ?
+           AND activo = 1
+           AND agotado = 0
+         LIMIT 1`,
+        [Number(item.id_item)]
+      );
+
+      if (!disponibles.length) {
+        throw new HttpError(
+          400,
+          "Uno de los artículos no está disponible."
+        );
+      }
+    }
+
+    const [insertQr] = await connection.query(
+      `INSERT INTO rest_pedido_qr
+        (id_mesa, uid, estado, mesa_esperando)
+       VALUES (?, ?, 'POR_CONFIRMAR', ?)`,
+      [idMesa, uid.trim(), idMesa]
+    );
+
+    const idPedidoQr = insertQr.insertId;
+
+    for (const item of items) {
+      await connection.query(
+        `INSERT INTO rest_pedido_qr_item
+          (id_pedido_qr, id_item, cantidad, observaciones)
+         VALUES (?, ?, ?, ?)`,
+        [
+          idPedidoQr,
+          Number(item.id_item),
+          Number(item.cantidad),
+          item.observaciones
+            ? String(item.observaciones).trim()
+            : null,
+        ]
+      );
+    }
+
+    await connection.commit();
+
+    return res.status(201).json({
+      mensaje: "Pedido enviado. Esperá la confirmación del mozo.",
+      id_pedido_qr: idPedidoQr,
+      estado: "POR_CONFIRMAR",
+    });
+  } catch (error) {
+    await connection.rollback();
+
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new HttpError(
+        409,
+        "La mesa ya tiene un pedido QR esperando al mozo."
+      );
+    }
+
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+// =====================================================
+// QR: PEDIDOS PENDIENTES PARA MOZO / ENCARGADO
+// =====================================================
+
+exports.qrPedidosPendientes = async (req, res) => {
+  const [pedidos] = await pool.query(
+    `SELECT
+        qr.id_pedido_qr,
+        qr.uid,
+        qr.estado,
+        qr.creado,
+        m.id_mesa,
+        m.numero AS mesa,
+        CASE
+          WHEN c.cuenta_pedida IS NOT NULL THEN 'CUENTA_PEDIDA'
+          WHEN c.id_comanda IS NOT NULL THEN 'OCUPADA'
+          ELSE 'LIBRE'
+        END AS estado_mesa,
+        COALESCE(
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id_item', qi.id_item,
+              'nombre', i.nombre,
+              'precio', i.precio,
+              'cantidad', qi.cantidad,
+              'observaciones', qi.observaciones
+            )
+          ),
+          JSON_ARRAY()
+        ) AS items
+     FROM rest_pedido_qr qr
+     INNER JOIN rest_mesa m
+       ON m.id_mesa = qr.id_mesa
+     LEFT JOIN rest_comanda c
+       ON c.id_mesa = m.id_mesa
+      AND c.estado = 'ABIERTA'
+     INNER JOIN rest_pedido_qr_item qi
+       ON qi.id_pedido_qr = qr.id_pedido_qr
+     INNER JOIN rest_item_menu i
+       ON i.id_item = qi.id_item
+     WHERE qr.estado = 'POR_CONFIRMAR'
+     GROUP BY
+        qr.id_pedido_qr,
+        qr.uid,
+        qr.estado,
+        qr.creado,
+        m.id_mesa,
+        m.numero,
+        c.id_comanda,
+        c.cuenta_pedida
+     ORDER BY qr.creado ASC`
+  );
+
+  res.json(pedidos);
+};
+
+// =====================================================
+// QR: CONFIRMAR PEDIDO
+// =====================================================
+
+exports.qrResolverPedido = async (req, res) => {
+  const idPedidoQr = validarId(
+    req.params.id,
+    "Pedido QR inválido."
+  );
+
+  const personasRaw = req.body?.personas;
+
+  const connection = await pool.getConnection();
+
+  let qr;
+  let mesaLibre = false;
+  let idComanda = null;
+  let itemsQr = [];
+
+  try {
+    await connection.beginTransaction();
+
+    const [qrRows] = await connection.query(
+      `SELECT *
+       FROM rest_pedido_qr
+       WHERE id_pedido_qr = ?
+       FOR UPDATE`,
+      [idPedidoQr]
+    );
+
+    if (!qrRows.length) {
+      throw new HttpError(404, "Pedido QR no encontrado.");
+    }
+
+    qr = qrRows[0];
+
+    if (qr.estado !== "POR_CONFIRMAR") {
+      throw new HttpError(409, "Este pedido QR ya fue resuelto.");
+    }
+
+    const [mesas] = await connection.query(
+      `SELECT id_mesa, activa
+       FROM rest_mesa
+       WHERE id_mesa = ?
+       FOR UPDATE`,
+      [qr.id_mesa]
+    );
+
+    if (!mesas.length || !mesas[0].activa) {
+      throw new HttpError(404, "La mesa no existe o está inactiva.");
+    }
+
+    // rest_mesa no tiene columna estado: la ocupación se determina
+    // por la existencia de una comanda ABIERTA.
+    const [comandasAbiertas] = await connection.query(
+      `SELECT id_comanda
+       FROM rest_comanda
+       WHERE id_mesa = ?
+         AND estado = 'ABIERTA'
+       ORDER BY id_comanda DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [qr.id_mesa]
+    );
+
+    mesaLibre = comandasAbiertas.length === 0;
+
+    if (!mesaLibre) {
+      idComanda = Number(comandasAbiertas[0].id_comanda);
+    }
+
+    const [items] = await connection.query(
+      `SELECT id_item, cantidad, observaciones
+       FROM rest_pedido_qr_item
+       WHERE id_pedido_qr = ?`,
+      [idPedidoQr]
+    );
+
+    if (!items.length) {
+      throw new HttpError(
+        400,
+        "El pedido QR no contiene artículos."
+      );
+    }
+
+    itemsQr = items;
+
+    if (mesaLibre) {
+      const personas = Number(personasRaw);
+
+      if (
+        !Number.isInteger(personas) ||
+        personas < 1 ||
+        personas > 20
+      ) {
+        throw new HttpError(
+          400,
+          "Indicá la cantidad de personas (1 a 20) para abrir la mesa."
+        );
+      }
+    }
+
+    // Marcar como procesando para evitar doble confirmación.
+    await connection.query(
+      `UPDATE rest_pedido_qr
+       SET estado = 'PROCESANDO'
+       WHERE id_pedido_qr = ?`,
+      [idPedidoQr]
+    );
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+
+  try {
+    const uidPedido = qr.uid;
+    let resultado;
+
+    if (mesaLibre) {
+      // Mesa libre: el mozo confirma y carga la cantidad de personas.
+      resultado = await callProcedure(
+        "sp_comanda_pedido_inicial",
+        [
+          Number(qr.id_mesa),
+          req.user.id_usuario,
+          Number(personasRaw),
+          uidPedido,
+          "QR",
+          req.user.id_usuario,
+          JSON.stringify(itemsQr),
+        ]
+      );
+
+      idComanda = Number(resultado?.[0]?.id_comanda);
+    } else {
+      // Mesa ocupada: se agrega a la comanda que ya está abierta.
+      resultado = await callProcedure(
+        "sp_pedido_crear",
+        [
+          idComanda,
+          uidPedido,
+          "QR",
+          req.user.id_usuario,
+          JSON.stringify(itemsQr),
+        ]
+      );
+    }
+
+    const idPedido = Number(resultado?.[0]?.id_pedido);
+
+    if (!idPedido) {
+      throw new Error(
+        "El procedimiento no devolvió el ID del pedido."
+      );
+    }
+
+    await pool.query(
+      `UPDATE rest_pedido_qr
+       SET estado = 'CONFIRMADO',
+           mesa_esperando = NULL,
+           resuelto = NOW(),
+           id_usuario_resuelve = ?,
+           id_pedido = ?
+       WHERE id_pedido_qr = ?
+         AND estado = 'PROCESANDO'`,
+      [
+        req.user.id_usuario,
+        idPedido,
+        idPedidoQr,
+      ]
+    );
+
+    await audit(
+      req.user.id_usuario,
+      "CONFIRMAR_QR",
+      "rest_pedido_qr",
+      idPedidoQr,
+      {
+        id_pedido: idPedido,
+        id_comanda: idComanda,
+      }
+    );
+
+    return res.json({
+      mensaje: "Pedido QR confirmado y agregado a la comanda.",
+      id_pedido: idPedido,
+      id_comanda: idComanda,
+    });
+  } catch (error) {
+    // Si falla la creación, vuelve a quedar pendiente.
+    await pool.query(
+      `UPDATE rest_pedido_qr
+       SET estado = 'POR_CONFIRMAR',
+           mesa_esperando = id_mesa
+       WHERE id_pedido_qr = ?
+         AND estado = 'PROCESANDO'`,
+      [idPedidoQr]
+    );
+
+    throw error;
+  }
+};
+
+// =====================================================
+// QR: DESCARTAR PEDIDO PENDIENTE
+// =====================================================
+
+exports.qrDescartarPedido = async (req, res) => {
+  const idPedidoQr = validarId(
+    req.params.id,
+    "Pedido QR inválido."
+  );
+
+  const [resultado] = await pool.query(
+    `UPDATE rest_pedido_qr
+     SET estado = 'DESCARTADO',
+         mesa_esperando = NULL,
+         resuelto = NOW(),
+         id_usuario_resuelve = ?
+     WHERE id_pedido_qr = ?
+       AND estado = 'POR_CONFIRMAR'`,
+    [
+      req.user.id_usuario,
+      idPedidoQr,
+    ]
+  );
+
+  if (!resultado.affectedRows) {
+    const [existente] = await pool.query(
+      `SELECT id_pedido_qr
+       FROM rest_pedido_qr
+       WHERE id_pedido_qr = ?`,
+      [idPedidoQr]
+    );
+
+    if (!existente.length) {
+      throw new HttpError(404, "Pedido QR no encontrado.");
+    }
+
+    throw new HttpError(
+      409,
+      "Este pedido QR ya fue resuelto o está siendo procesado."
+    );
+  }
+
+  await audit(
+    req.user.id_usuario,
+    "DESCARTAR_QR",
+    "rest_pedido_qr",
+    idPedidoQr
+  );
+
+  res.json({
+    mensaje: "Pedido QR descartado.",
+  });
+};
+
+// =====================================================
+// COMPATIBILIDAD CON LA RUTA ANTERIOR
+// =====================================================
+
+exports.qrResolverAccionAnterior = async (req, res) => {
+  const accion = String(
+    req.body?.accion || ""
+  ).toUpperCase();
+
+  if (accion === "DESCARTAR") {
+    return exports.qrDescartarPedido(req, res);
+  }
+
+  return exports.qrResolverPedido(req, res);
 };

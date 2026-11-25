@@ -99,7 +99,13 @@ BEGIN
             WHEN c.cuenta_pedida IS NOT NULL THEN 'CUENTA_PEDIDA'
             WHEN c.id_comanda IS NOT NULL THEN 'OCUPADA'
             ELSE 'LIBRE'
-        END AS estado
+        END AS estado,
+        (
+            SELECT COUNT(*)
+            FROM rest_pedido_qr qr
+            WHERE qr.id_mesa = m.id_mesa
+              AND qr.estado = 'POR_CONFIRMAR'
+        ) AS pedidos_qr
     FROM rest_mesa m
     LEFT JOIN rest_comanda c
         ON c.id_mesa = m.id_mesa
@@ -164,7 +170,7 @@ BEGIN
         SET MESSAGE_TEXT = 'La cuenta ya fue solicitada';
     END IF;
 
-    IF p_origen IS NULL OR p_origen NOT IN ('SALON', 'MOSTRADOR') THEN
+    IF p_origen IS NULL OR p_origen NOT IN ('SALON', 'MOSTRADOR', 'QR') THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Origen de pedido invalido';
     END IF;
