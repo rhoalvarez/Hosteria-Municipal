@@ -76,6 +76,17 @@ const spec = YAML.parse(
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(spec));
 
+// Frontend (pantallas del sistema)
+// Node entrega también el HTML, CSS y JS de la carpeta frontend/.
+// Así, en la hostería se entra con http://IP-DEL-SERVIDOR:3000 y la
+// misma dirección sirve las pantallas y la API (/api): no hace falta
+// Live Server ni CORS, y el QR de las mesas apunta a un solo lugar.
+// Va DESPUÉS de las rutas /api (para que ningún archivo tape la API)
+// y ANTES del 404 (si no, el 404 respondería antes y nunca llegaría acá).
+// app.js está en src/, por eso se sube un nivel ("..") hasta frontend/.
+// En "/" entrega automáticamente frontend/index.html (el login).
+app.use(express.static(path.join(__dirname, "..", "frontend")));
+
 // Error 404
 app.use((req, res) => {
   res.status(404).json({ error: "Ruta no encontrada." });
