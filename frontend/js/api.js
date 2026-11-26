@@ -1199,3 +1199,343 @@ async function descartarPedidoQr(idPedidoQr) {
   guardarMock(db);
   return { ok: true };
 }
+/* =========================================================
+   CAJA (RF-CAJ) — Incremento 3
+   ---------------------------------------------------------
+   Todas las rutas son /api/caja/... y solo las puede usar el
+   ENCARGADO (el backend responde 403 a los demás).
+
+   La caja NO tiene versión mock: las reglas (turno abierto,
+   arqueo solo con efectivo, total que tiene que coincidir) viven
+   en los procedimientos de la base (90_caja.sql). Copiarlas acá
+   sería tener DOS versiones de las mismas reglas que pueden
+   quedar distintas. Con USAR_MOCK = true, la caja avisa que
+   necesita el backend real.
+
+   Cómo llegan los datos de la caja:
+   - Los importes (DECIMAL) llegan como texto "17000.00" → Number()
+   - Las fechas llegan en UTC ("...T02:50:22.000Z"): las dejamos
+     así y la pantalla las muestra con toLocaleString("es-AR"),
+     que las pasa a la hora local. NO cortar el texto.
+   - Formas y tipos llegan en MAYÚSCULA → minúscula, como el resto.
+   ========================================================= */
+
+// Las mismas reglas que el backend (cash.controller.js)
+const MAX_PAGOS = 4;
+const FORMAS_PAGO = ['efectivo', 'transferencia'];
+// Medios para el combo de transferencia (a confirmar con la hostería)
+const MEDIOS_TRANSFERENCIA = ['BNA+', 'Mercado Pago', 'Naranja X', 'Otro'];
+const IMPORTE_MAXIMO = 99999999; // DECIMAL(10,2) de la base
+
+function cajaSoloBackendReal() {
+  throw errorApi('La caja funciona solo con el backend real: poné USAR_MOCK = false en api.js', 501);
+}
+
+// "17000.00" → 17000. null o vacío → 0
+function aImporte(valor) {
+  return Number(valor || 0);
+}
+
+// Igual que aImporte, pero deja null si no hay dato
+// (los datos del cierre son null mientras la caja está abierta)
+function aImporteONull(valor) {
+  return valor === null || valor === undefined ? null : Number(valor);
+}
+
+/* Pasa un importe a CENTAVOS enteros para comparar sumas.
+   En JavaScript 0.1 + 0.2 da 0.30000000000000004: si sumamos
+   pesos con decimales, una cuenta que "da justo" puede no dar.
+   Con enteros eso no pasa. El backend hace lo mismo. */
+function aCentavos(importe) {
+  return Math.round(Number(importe) * 100);
+}
+
+// Importe válido: número, no negativo, con hasta 2 decimales
+function validarImporte(valor, nombre, mayorQueCero) {
+  const n = Number(valor);
+  if (valor === '' || valor === null || valor === undefined || !Number.isFinite(n)) {
+    throw errorApi(nombre + ': escribí un importe', 400);
+  }
+  if (mayorQueCero ? n <= 0 : n < 0) {
+    throw errorApi(nombre + (mayorQueCero ? ' tiene que ser mayor que cero' : ' no puede ser negativo'), 400);
+  }
+  if (n > IMPORTE_MAXIMO) {
+    throw errorApi(nombre + ': el importe es demasiado grande', 400);
+  }
+  // n * 100 tiene que dar un número entero (tolerancia por el redondeo de JS)
+  if (Math.abs(n * 100 - Math.round(n * 100)) > 0.000001) {
+    throw errorApi(nombre + ': como máximo 2 decimales', 400);
+  }
+  return n;
+}
+
+/* Fila de v_caja_resumen → formato de las pantallas
+   estado: 'abierto' | 'cerrado' */
+function adaptarTurno(t) {
+  if (!t) return null;
+  return {
+    id: t.id_turno_caja,
+    estado: aMinuscula(t.estado),
+    apertura: t.apertura,
+    cierre: t.cierre || null,
+    usuario_apertura: t.usuario_apertura || '',
+    usuario_cierre: t.usuario_cierre || '',
+    saldo_inicial: aImporte(t.saldo_inicial),
+    // Efectivo (lo único que se cuenta en el arqueo)
+    ingresos_efectivo: aImporte(t.ingresos_efectivo),
+    egresos_efectivo: aImporte(t.egresos_efectivo),
+    efectivo_en_caja: aImporte(t.efectivo_en_caja),
+    // Transferencias (se muestran aparte: no están en el cajón)
+    ingresos_transferencia: aImporte(t.ingresos_transferencia),
+    egresos_transferencia: aImporte(t.egresos_transferencia),
+    // Todo junto, como el saldo del Excel de la hostería
+    saldo_total: aImporte(t.saldo_total),
+    cantidad_cobros: Number(t.cantidad_cobros || 0),
+    cantidad_sin_cargo: Number(t.cantidad_sin_cargo || 0),
+    // Datos del cierre (null mientras está abierto)
+    efectivo_contado: aImporteONull(t.efectivo_contado),
+    efectivo_esperado: aImporteONull(t.efectivo_esperado),
+    total_transferencias: aImporteONull(t.total_transferencias),
+    diferencia: aImporteONull(t.diferencia),
+    observaciones: t.observaciones || ''
+  };
+}
+
+// Fila de sp_caja_movimientos → formato de las pantallas
+function adaptarMovimiento(m) {
+  return {
+    id: m.id_movimiento,
+    fecha: m.fecha,
+    codigo: m.codigo,
+    tipo: aMinuscula(m.tipo),          // 'ingreso' | 'egreso'
+    concepto: m.concepto || '',
+    forma: aMinuscula(m.forma),        // 'efectivo' | 'transferencia'
+    medio: m.medio_transferencia || '',
+    tipo_comprobante: m.tipo_comprobante || '',
+    nro_comprobante: m.nro_comprobante || '',
+    dni_cuit: m.dni_cuit || '',
+    huesped_proveedor: m.huesped_proveedor || '',
+    detalle: m.detalle || '',
+    ingreso: aImporte(m.ingreso),
+    egreso: aImporte(m.egreso),
+    saldo: aImporte(m.saldo),
+    es_cobro: m.id_cobro !== null && m.id_cobro !== undefined, // lo generó un cobro de mesa
+    usuario: m.usuario || ''
+  };
+}
+
+/* ---------- COBRO DE UNA MESA (RF-CAJ-04/05) ---------- */
+
+/* Cuenta de la mesa para cobrar: la comanda ABIERTA de esa mesa.
+   Devuelve { id_comanda, numero, mesa_numero, personas, mozo,
+              total, cuenta_pedida } o null si la mesa no tiene comanda.
+
+   Usamos GET /comandas/abiertas y no la suma de los ítems porque
+   el backend compara el total que mandamos con rest_comanda.total:
+   tiene que ser EXACTAMENTE el de la base. Si la pantalla lo
+   calculara por su cuenta y algo no coincidiera (por ejemplo, un
+   ítem anulado), el cobro se rechazaría. */
+async function obtenerCuentaMesa(idMesa) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+
+  const comandas = await peticion('GET', '/comandas/abiertas');
+  const c = comandas.find(x => Number(x.id_mesa) === Number(idMesa));
+  if (!c) return null;
+
+  return {
+    id_comanda: c.id_comanda,
+    numero: c.numero,
+    mesa_numero: c.mesa,
+    personas: c.personas,
+    mozo: c.mozo || '',
+    total: aImporte(c.total),
+    cuenta_pedida: c.cuenta_pedida !== null && c.cuenta_pedida !== undefined
+  };
+}
+
+/* Copia SOLO los campos permitidos de cada pago y los ordena.
+   pagos = [{ forma: 'efectivo' | 'transferencia', importe, medio }] */
+function limpiarPagos(pagos) {
+  return (Array.isArray(pagos) ? pagos : []).map(p => ({
+    forma: aMinuscula(String(p.forma || '').trim()),
+    importe: p.importe,
+    medio: String(p.medio || '').trim()
+  }));
+}
+
+/* Mismas validaciones que el backend. La pantalla las usa para
+   avisar ANTES de mandar; la seguridad real sigue siendo el backend. */
+function validarCobro(total, pagos, sinCargo, motivo) {
+  if (sinCargo) {
+    if (!motivo) throw errorApi('Un cobro sin cargo requiere motivo', 400);
+    return;
+  }
+  if (pagos.length === 0 && total > 0) {
+    throw errorApi('Falta indicar la forma de pago', 400);
+  }
+  if (pagos.length > MAX_PAGOS) {
+    throw errorApi('Como máximo ' + MAX_PAGOS + ' formas de pago por cobro', 400);
+  }
+  pagos.forEach((p, i) => {
+    const nombre = 'Pago ' + (i + 1);
+    if (!FORMAS_PAGO.includes(p.forma)) {
+      throw errorApi(nombre + ': forma de pago no permitida', 400);
+    }
+    p.importe = validarImporte(p.importe, nombre, true);
+    if (p.forma === 'transferencia' && !p.medio) {
+      throw errorApi(nombre + ': indicá el medio de la transferencia', 400);
+    }
+  });
+  const suma = pagos.reduce((s, p) => s + aCentavos(p.importe), 0);
+  if (suma !== aCentavos(total)) {
+    throw errorApi('La suma de los pagos (' + formatoPesosSeguro(suma / 100) +
+                   ') no coincide con el total (' + formatoPesosSeguro(total) + ')', 400);
+  }
+}
+
+// formato.js puede no estar cargado en alguna pantalla: por las dudas
+function formatoPesosSeguro(numero) {
+  return typeof formatoPesos === 'function' ? formatoPesos(numero) : '$ ' + numero;
+}
+
+/* Cobra la comanda y la cierra: la mesa queda LIBRE.
+   datos = {
+     total,                 // el total que se le MOSTRÓ al encargado
+     pagos: [{ forma: 'efectivo' | 'transferencia', importe, medio }],
+     sin_cargo: false,
+     motivo: ''             // obligatorio si sin_cargo es true
+   }
+   Mandamos el total que se mostró en pantalla: si mientras tanto
+   el mozo agregó algo, la base lo detecta ("El total de la cuenta
+   cambió") y no se cobra de menos.
+   Devuelve { id_cobro, numero_comanda, total }. */
+async function cobrarComanda(idComanda, datos) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+
+  const total = validarImporte(datos.total, 'Total', false);
+  const sinCargo = datos.sin_cargo === true;
+  const motivo = String(datos.motivo || '').trim();
+  const pagos = sinCargo ? [] : limpiarPagos(datos.pagos);
+  validarCobro(total, pagos, sinCargo, motivo);
+
+  const r = await peticion('POST', '/caja/comandas/' + idComanda + '/cobros', {
+    total,
+    pagos: pagos.map(p => ({
+      forma: p.forma.toUpperCase(),
+      importe: p.importe,
+      medio_transferencia: p.forma === 'transferencia' ? p.medio : ''
+    })),
+    sin_cargo: sinCargo,
+    motivo_sin_cargo: sinCargo ? motivo : ''
+  });
+
+  return {
+    id_cobro: r.id_cobro,
+    numero_comanda: r.numero_comanda,
+    total: aImporte(r.total)
+  };
+}
+
+/* ---------- TURNO DE CAJA (RF-CAJ-01/02/08/09) ---------- */
+
+// Devuelve { abierto: true/false, turno } (turno = null si está cerrada)
+async function obtenerTurnoActual() {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const r = await peticion('GET', '/caja/turno-actual');
+  return { abierto: r.abierto === true, turno: adaptarTurno(r.turno) };
+}
+
+// Abre la caja con el efectivo que hay en el cajón. Devuelve { id }
+async function abrirCaja(saldoInicial) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const saldo = validarImporte(saldoInicial, 'Saldo inicial', false);
+  const r = await peticion('POST', '/caja/turnos/apertura', { saldo_inicial: saldo });
+  return { id: r.id_turno_caja };
+}
+
+// Resumen de un turno (abierto o cerrado)
+async function obtenerTurno(idTurno) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  return adaptarTurno(await peticion('GET', '/caja/turnos/' + idTurno));
+}
+
+// Historial de turnos, del más nuevo al más viejo (máx. 100)
+async function obtenerTurnos(cantidad) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const n = Number(cantidad) || 30;
+  const filas = await peticion('GET', '/caja/turnos?cantidad=' + n);
+  return filas.map(adaptarTurno);
+}
+
+/* Cierre con arqueo: el encargado cuenta el EFECTIVO del cajón.
+   La base calcula lo esperado y la diferencia. Las transferencias
+   no se cuentan (no están en el cajón): se informan aparte.
+   (propuesta) Si hay diferencia, las observaciones son obligatorias:
+   eso lo controla la base y devuelve el mensaje.
+   Devuelve el turno cerrado (con esperado, contado y diferencia). */
+async function cerrarCaja(idTurno, efectivoContado, observaciones) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const contado = validarImporte(efectivoContado, 'Efectivo contado', false);
+  const r = await peticion('POST', '/caja/turnos/' + idTurno + '/cierre', {
+    efectivo_contado: contado,
+    observaciones: String(observaciones || '').trim()
+  });
+  return adaptarTurno(r);
+}
+
+// Reabre el último turno cerrado (propuesta). Motivo: 5 letras o más.
+async function reabrirCaja(idTurno, motivo) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const texto = String(motivo || '').trim();
+  if (texto.length < 5) throw errorApi('Para reabrir la caja hay que escribir el motivo', 400);
+  const r = await peticion('POST', '/caja/turnos/' + idTurno + '/reapertura', { motivo: texto });
+  return adaptarTurno(r);
+}
+
+/* ---------- MOVIMIENTOS (RF-CAJ-06/07) ---------- */
+
+// Movimientos de un turno, en el orden en que se hicieron
+async function obtenerMovimientos(idTurno) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const filas = await peticion('GET', '/caja/turnos/' + idTurno + '/movimientos');
+  return filas.map(adaptarMovimiento);
+}
+
+// Códigos para movimientos manuales: [{ codigo, concepto, tipo: 'ingreso' | 'egreso' }]
+// (COBRO no viene: ese lo genera solo el sistema al cobrar una mesa)
+async function obtenerCodigosCaja() {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const filas = await peticion('GET', '/caja/codigos');
+  return filas.map(c => ({ codigo: c.codigo, concepto: c.concepto, tipo: aMinuscula(c.tipo) }));
+}
+
+/* Movimiento manual (gasto, pago a proveedor, ajuste).
+   datos = { codigo, forma, medio, importe, concepto, tipo_comprobante,
+             nro_comprobante, dni_cuit, huesped_proveedor, detalle }
+   Si suma o resta lo decide el TIPO del código, no la pantalla.
+   Devuelve { id, saldo }. */
+async function registrarMovimiento(datos) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+
+  const forma = aMinuscula(String(datos.forma || 'efectivo').trim());
+  const medio = String(datos.medio || '').trim();
+  if (!String(datos.codigo || '').trim()) throw errorApi('Elegí el código del movimiento', 400);
+  if (!FORMAS_PAGO.includes(forma)) throw errorApi('Forma no permitida', 400);
+  if (forma === 'transferencia' && !medio) throw errorApi('Indicá el medio de la transferencia', 400);
+  const importe = validarImporte(datos.importe, 'Importe', true);
+
+  // Copiamos SOLO los campos permitidos
+  const r = await peticion('POST', '/caja/movimientos', {
+    codigo: String(datos.codigo).trim(),
+    forma: forma.toUpperCase(),
+    medio_transferencia: forma === 'transferencia' ? medio : '',
+    importe,
+    concepto: String(datos.concepto || '').trim(),
+    tipo_comprobante: String(datos.tipo_comprobante || '').trim(),
+    nro_comprobante: String(datos.nro_comprobante || '').trim(),
+    dni_cuit: String(datos.dni_cuit || '').trim(),
+    huesped_proveedor: String(datos.huesped_proveedor || '').trim(),
+    detalle: String(datos.detalle || '').trim()
+  });
+  return { id: r.id_movimiento, saldo: aImporte(r.saldo) };
+}
