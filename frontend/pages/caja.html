@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#3D6570">
   <title>Caja · Portal de la Luna</title>
   <link rel="stylesheet" href="../css/estilos.css">
-  <!-- Estilos de la caja (Inc. 3): resumen, movimientos, cierre -->
+  <!-- Estilos de la caja (Inc. 3): resumen, movimientos, cierre, historial -->
   <link rel="stylesheet" href="../css/caja.css">
   <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola -->
   <link rel="icon" href="data:,">
@@ -52,6 +52,14 @@
         <p id="ultimo-cierre-info" class="caja-ayuda"></p>
         <!-- <dl> = lista de "nombre: valor". La llena caja.js -->
         <dl id="ultimo-cierre-datos" class="caja-datos"></dl>
+
+        <!-- Reapertura (RF-CAJ-11): el backend deja reabrir SOLO el
+             último turno cerrado, que es justo el que se muestra acá.
+             Por eso el botón está en este bloque y no en el historial:
+             la pantalla sigue la misma regla que la base. -->
+        <button type="button" id="btn-reabrir" class="boton boton--secundario boton--bloque">
+          Reabrir este turno
+        </button>
       </div>
     </section>
 
@@ -113,6 +121,43 @@
             </tr>
           </thead>
           <tbody id="tabla-movimientos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =====================================================
+         HISTORIAL DE TURNOS (RF-CAJ-11)
+         Se ve con la caja abierta y con la caja cerrada.
+         Se carga con el botón y NO cada 10 s: es una consulta
+         de vez en cuando, y así no cargamos el wifi de la
+         hostería con pedidos que nadie está mirando.
+         ===================================================== -->
+    <section id="seccion-historial" class="caja-historial">
+      <div class="caja-historial__encabezado">
+        <h2 class="caja-subtitulo">Historial de turnos</h2>
+        <button type="button" id="btn-historial" class="boton boton--secundario">Ver historial</button>
+      </div>
+      <!-- "Cargando historial...", "Todavía no hay turnos", errores -->
+      <p id="mensaje-historial" class="mensaje" role="status" hidden></p>
+
+      <div id="historial-contenedor" class="caja-tabla-contenedor" tabindex="0"
+           aria-label="Historial de turnos" hidden>
+        <table class="caja-tabla">
+          <thead>
+            <tr>
+              <th scope="col">Turno</th>
+              <th scope="col">Apertura</th>
+              <th scope="col">Cierre</th>
+              <th scope="col" class="caja-num">Saldo inicial</th>
+              <th scope="col" class="caja-num">Esperado</th>
+              <th scope="col" class="caja-num">Contado</th>
+              <th scope="col">Diferencia</th>
+              <th scope="col">Estado</th>
+              <!-- Columna del botón "Ver": sin título visible -->
+              <th scope="col"><span class="caja-solo-lector">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-historial"></tbody>
         </table>
       </div>
     </section>
@@ -226,6 +271,82 @@
           <button type="submit" id="btn-confirmar-cierre" class="boton boton--peligro">Cerrar caja</button>
         </div>
       </form>
+    </section>
+  </div>
+
+  <!-- =====================================================
+       PANEL: REAPERTURA DEL ÚLTIMO TURNO (RF-CAJ-11)
+       Ejemplo de uso: se cerró la caja y después apareció una
+       mesa sin cobrar. El motivo es obligatorio (5 letras o más)
+       y la base lo guarda en la auditoría (rest_auditoria).
+       ===================================================== -->
+  <div id="panel-reapertura" class="panel-fondo" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-labelledby="titulo-reapertura">
+      <h2 id="titulo-reapertura" class="panel__titulo">Reabrir turno</h2>
+      <form id="form-reapertura" novalidate>
+        <!-- "Turno N° 3 · cerrado el 26/11 20:00 por Encargado" -->
+        <p id="reapertura-info" class="caja-ayuda"></p>
+
+        <!-- Aviso: reabrir cambia un cierre que ya estaba hecho -->
+        <p class="caja-advertencia">
+          La caja vuelve a quedar abierta con este turno. Para terminar,
+          hay que cerrarla de nuevo contando el efectivo del cajón.
+          La reapertura queda registrada con tu usuario y el motivo.
+        </p>
+
+        <div class="campo">
+          <label for="input-motivo-reapertura">Motivo de la reapertura (obligatorio)</label>
+          <textarea id="input-motivo-reapertura" rows="2" maxlength="255"
+                    placeholder="Ej.: quedó la mesa 4 sin cobrar"></textarea>
+        </div>
+
+        <p id="error-reapertura" class="mensaje mensaje--error" role="alert" hidden></p>
+        <div class="panel__acciones">
+          <button type="button" class="boton boton--secundario" data-cerrar>Cancelar</button>
+          <button type="submit" id="btn-confirmar-reapertura" class="boton boton--peligro">Reabrir turno</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- =====================================================
+       PANEL: DETALLE DE UN TURNO DEL HISTORIAL (solo lectura)
+       Arqueo del turno + sus movimientos. No se puede cambiar
+       nada desde acá.
+       ===================================================== -->
+  <div id="panel-turno" class="panel-fondo" hidden>
+    <section class="panel panel--ancho" role="dialog" aria-modal="true" aria-labelledby="titulo-turno">
+      <h2 id="titulo-turno" class="panel__titulo">Turno</h2>
+      <!-- "Abierto el 25/11 08:00 por Encargado · cerrado el ..." -->
+      <p id="turno-detalle-info" class="caja-ayuda"></p>
+      <p id="error-turno" class="mensaje mensaje--error" role="alert" hidden></p>
+
+      <!-- Arqueo: lo llena caja.js (igual que "Último cierre") -->
+      <dl id="turno-detalle-datos" class="caja-datos"></dl>
+
+      <h3 class="caja-subtitulo">Movimientos</h3>
+      <p id="turno-sin-movimientos" class="mensaje" hidden>Este turno no tuvo movimientos.</p>
+      <div class="caja-tabla-contenedor" tabindex="0" aria-label="Movimientos del turno elegido">
+        <table class="caja-tabla">
+          <thead>
+            <tr>
+              <th scope="col">Hora</th>
+              <th scope="col">Código</th>
+              <th scope="col">Concepto</th>
+              <th scope="col">Forma</th>
+              <th scope="col" class="caja-num">Ingreso</th>
+              <th scope="col" class="caja-num">Egreso</th>
+              <th scope="col" class="caja-num">Saldo</th>
+              <th scope="col">Usuario</th>
+            </tr>
+          </thead>
+          <tbody id="turno-detalle-movimientos"></tbody>
+        </table>
+      </div>
+
+      <div class="panel__acciones">
+        <button type="button" class="boton boton--secundario" data-cerrar>Cerrar</button>
+      </div>
     </section>
   </div>
 
