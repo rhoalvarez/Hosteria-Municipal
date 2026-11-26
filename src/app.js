@@ -12,6 +12,7 @@ const authRoutes = require("./routes/auth.routes");
 const catalogRoutes = require("./routes/catalog.routes");
 const restaurantRoutes = require("./routes/restaurant.routes");
 const cashRoutes = require("./routes/cash.routes");
+const statsRoutes = require("./routes/stats.routes");
 const lodgingRoutes = require("./routes/lodging.routes");
 const usuariosRoutes = require("./routes/usuarios.routes");
 
@@ -67,6 +68,8 @@ app.use("/api/usuarios", usuariosRoutes);
 app.use("/api", catalogRoutes);
 app.use("/api", restaurantRoutes);
 app.use("/api/caja", cashRoutes);
+// Estadísticas (Inc. 3): ranking de platos e ingresos, solo ENCARGADO
+app.use("/api/estadisticas", statsRoutes);
 app.use("/api", lodgingRoutes);
 
 // Documentación Swagger
