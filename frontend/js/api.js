@@ -232,11 +232,18 @@ function aBooleano(valor) {
 
 // Las categorías casi no cambian: las pedimos una vez por pantalla
 // y las guardamos acá. Hacen falta para traducir id_categoria ↔ letra.
+// Guardamos la PROMESA (no el resultado): si tres funciones piden las
+// categorías al mismo tiempo al abrir Menú, comparten UNA sola petición
+// en vez de hacer tres. Si la petición falla, borramos la caché para
+// que el próximo intento vuelva a preguntar al servidor.
 let categoriasCache = null;
 
-async function categoriasDelServidor() {
+function categoriasDelServidor() {
   if (!categoriasCache) {
-    categoriasCache = await peticion('GET', '/categorias');
+    categoriasCache = peticion('GET', '/categorias').catch(error => {
+      categoriasCache = null;
+      throw error;
+    });
   }
   return categoriasCache;
 }
@@ -764,12 +771,9 @@ async function obtenerPedidosCocina() {
     const filas = await peticion('GET', '/cocina/pedidos'); // ya vienen ordenados
     const pedidos = agruparPedidos(filas);
 
-    /* ⚠️ Por ahora sp_cocina_pedidos NO devuelve el número de mesa
-       (pendiente de Rosario: agregar m.numero AS mesa_numero).
-       Mientras tanto mostramos "Mesa ?" en vez de "Mesa null".
-       Cuando el backend lo mande, se usa solo, sin tocar nada más.
-       No lo buscamos con otra consulta (GET /mesas) porque serían
-       peticiones extra cada 10 s y cocina quizás no tiene permiso. */
+    /* sp_cocina_pedidos devuelve mesa_numero (50_cocina_mesa.sql).
+       Si algún pedido llegara sin mesa (por ejemplo, de MOSTRADOR),
+       mostramos "Mesa ?" en vez de "Mesa null". */
     pedidos.forEach(p => {
       if (p.mesa_numero === null || p.mesa_numero === undefined) {
         p.mesa_numero = '?';
@@ -892,11 +896,16 @@ function adaptarPlatoQr(p, categorias) {
   };
 }
 
-/* Bandeja del mozo: el backend manda UNA FILA POR ÍTEM, como los
-   otros pedidos. Nombres supuestos (a confirmar con Rosario):
-   { id_pedido_qr, id_mesa, mesa_numero, mesa_libre (0/1), creado,
-     id_item, codigo, nombre, precio, cantidad, observaciones }
-   Si Rosario usa otros nombres, se corrige SOLO acá. */
+/* Bandeja del mozo (GET /pedidos-qr). Nombres REALES del backend:
+   { id_pedido_qr, uid, estado, creado, id_mesa, mesa (número),
+     estado_mesa: 'LIBRE' | 'OCUPADA' | 'CUENTA_PEDIDA', ... }
+   Los ítems pueden llegar de DOS formas, y aceptamos las dos:
+   a) UNA FILA POR ÍTEM (id_item, nombre, precio, cantidad,
+      observaciones en cada fila), como los otros pedidos.
+   b) Una fila por pedido con "items": un arreglo JSON (versión con
+      JSON_ARRAYAGG). MariaDB lo puede mandar como TEXTO, así que si
+      es texto lo convertimos con JSON.parse.
+   Si cambia algún nombre en el backend, se corrige SOLO acá. */
 function agruparPedidosQr(filas) {
   const pedidos = [];
   const porId = new Map();
@@ -907,26 +916,68 @@ function agruparPedidosQr(filas) {
       pedido = {
         id: f.id_pedido_qr,
         mesa_id: f.id_mesa,
-        mesa_numero: f.mesa_numero,
-        mesa_libre: aBooleano(f.mesa_libre),
+        // el backend lo llama "mesa"; aceptamos también "mesa_numero"
+        mesa_numero: f.mesa_numero !== undefined ? f.mesa_numero : f.mesa,
+        // estado_mesa 'LIBRE' → hay que pedir las personas al confirmar
+        mesa_libre: f.estado_mesa !== undefined
+          ? aMinuscula(f.estado_mesa) === 'libre'
+          : aBooleano(f.mesa_libre),
         creado_en: f.creado,
         items: []
       };
       porId.set(f.id_pedido_qr, pedido);
       pedidos.push(pedido);
     }
-    if (f.id_item !== null && f.id_item !== undefined) {
-      pedido.items.push({
-        menu_id: f.id_item,
-        codigo: f.codigo || '',
-        nombre: f.nombre || f.articulo || '',
-        cantidad: Number(f.cantidad),
-        observaciones: f.observaciones || '',
-        precio: Number(f.precio) // precio ACTUAL del menú (el definitivo lo pone el backend al confirmar)
-      });
+
+    if (f.items !== undefined && f.items !== null) {
+      // Forma b): los ítems vienen todos juntos en "items"
+      for (const item of leerListaJson(f.items)) {
+        agregarItemQr(pedido, item);
+      }
+    } else {
+      // Forma a): esta fila ES un ítem
+      agregarItemQr(pedido, f);
     }
   }
   return pedidos;
+}
+
+// Convierte "items" en arreglo, venga como arreglo o como texto JSON.
+// Si el texto está mal formado devolvemos [] en vez de romper la pantalla.
+function leerListaJson(valor) {
+  if (Array.isArray(valor)) return valor;
+  try {
+    const lista = JSON.parse(valor);
+    return Array.isArray(lista) ? lista : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Agrega un ítem al pedido QR con el formato de las pantallas
+function agregarItemQr(pedido, i) {
+  if (i.id_item === null || i.id_item === undefined) return;
+  pedido.items.push({
+    menu_id: i.id_item,
+    codigo: i.codigo || '',
+    nombre: i.nombre || i.articulo || '',
+    cantidad: Number(i.cantidad),
+    observaciones: i.observaciones || '',
+    precio: Number(i.precio) // precio ACTUAL del menú (el definitivo lo pone el backend al confirmar)
+  });
+}
+
+/* El menú del QR puede mandar las categorías SIN la letra
+   ({ id_categoria, nombre }). Las pantallas trabajan con la letra
+   (A, B, D), así que la completamos: la sacamos del código del primer
+   plato de esa categoría (A01 → A). Si la categoría no tiene platos,
+   usamos el id como clave, para que igual funcione el filtro. */
+function completarLetras(categorias, platos) {
+  return categorias.map(c => {
+    if (c.letra) return c;
+    const plato = platos.find(p => p.id_categoria === c.id_categoria && p.codigo);
+    return { ...c, letra: plato ? String(plato.codigo)[0] : 'C' + c.id_categoria };
+  });
 }
 
 /* ---------- Para el CLIENTE (sin usuario) ---------- */
@@ -939,7 +990,7 @@ function agruparPedidosQr(filas) {
 async function obtenerMenuQr(codigo) {
   if (!USAR_MOCK) {
     const r = await peticion('GET', '/qr/' + encodeURIComponent(codigo) + '/menu');
-    const categorias = r.categorias || [];
+    const categorias = completarLetras(r.categorias || [], r.menu || []);
     return {
       mesa: { numero: r.mesa.numero },
       categorias: categorias
