@@ -658,6 +658,69 @@ async function cambiarDisponibilidad(idPlato, disponible) {
   return plato;
 }
 
+/* ---------- AUMENTO DE PRECIOS POR % (RF-MEN) ----------
+   Los precios cambian cada 6 meses aprox. (relevamiento).
+   Sin mock, igual que la caja: la fórmula (redondeo hacia arriba)
+   y la transacción viven en 99_aumento_precios.sql. La vista previa
+   la calcula el SERVIDOR con la misma fórmula que el aplicar: así lo
+   que se ve es exactamente lo que se guarda. */
+const REDONDEOS_AUMENTO = [1, 10, 50, 100];
+const PORCENTAJE_MAXIMO = 100; // (propuesta) frena un "150" por error
+
+function aumentoSoloBackendReal() {
+  throw errorApi('El aumento de precios funciona solo con el backend real: poné USAR_MOCK = false en api.js', 501);
+}
+
+// Mismas validaciones que el backend. Devuelve los números ya limpios.
+async function datosAumento(porcentaje, letraCategoria, redondeo) {
+  const p = Number(String(porcentaje).replace(',', '.')); // acepta "12,5"
+  if (!Number.isFinite(p) || p <= 0 || p > PORCENTAJE_MAXIMO) {
+    throw errorApi('El porcentaje tiene que ser mayor que 0 y como máximo ' + PORCENTAJE_MAXIMO, 400);
+  }
+  if (Math.abs(p * 100 - Math.round(p * 100)) > 0.000001) {
+    throw errorApi('El porcentaje puede tener como máximo 2 decimales', 400);
+  }
+
+  const r = Number(redondeo);
+  if (!REDONDEOS_AUMENTO.includes(r)) throw errorApi('Elegí el redondeo', 400);
+
+  // Las pantallas usan la LETRA de la categoría; la base, el id (0 = todas)
+  let idCategoria = 0;
+  const letra = String(letraCategoria || '').trim().toUpperCase();
+  if (letra) {
+    const categorias = await categoriasDelServidor();
+    const c = categorias.find(x => x.letra === letra);
+    if (!c) throw errorApi('La categoría no existe', 400);
+    idCategoria = c.id_categoria;
+  }
+  return { porcentaje: Math.round(p * 100) / 100, categoria: idCategoria, redondeo: r };
+}
+
+/* Vista previa: NO cambia nada.
+   Devuelve [{ id, codigo, nombre, categoria (letra), precio_actual, precio_nuevo }] */
+async function vistaAumentoPrecios(porcentaje, letraCategoria, redondeo) {
+  if (USAR_MOCK) aumentoSoloBackendReal();
+  const d = await datosAumento(porcentaje, letraCategoria, redondeo);
+  const filas = await peticion('GET', '/menu/aumento' +
+    '?porcentaje=' + d.porcentaje + '&categoria=' + d.categoria + '&redondeo=' + d.redondeo);
+  return filas.map(f => ({
+    id: f.id_item,
+    codigo: f.codigo,
+    nombre: f.nombre,
+    categoria: f.letra,
+    precio_actual: Number(f.precio_actual),
+    precio_nuevo: Number(f.precio_nuevo)
+  }));
+}
+
+// Aplica el aumento (todo junto, en una transacción). Devuelve { platos_actualizados }
+async function aplicarAumentoPrecios(porcentaje, letraCategoria, redondeo) {
+  if (USAR_MOCK) aumentoSoloBackendReal();
+  const d = await datosAumento(porcentaje, letraCategoria, redondeo);
+  const r = await peticion('POST', '/menu/aumento', d);
+  return { platos_actualizados: Number(r.platos_actualizados) };
+}
+
 /* ---------- PEDIDOS (RF-PED) y COCINA (RF-COC) ---------- */
 // Estados de un pedido: pendiente | en_preparacion | listo
 // (los pedidos QR sin confirmar NO están acá: viven en la bandeja,

@@ -25,6 +25,22 @@ router.post(
   asyncHandler(c.crearMenu)
 );
 
+// Aumento de precios por porcentaje (solo encargado).
+// Van ANTES de "/menu/:id" por claridad: así nadie piensa que
+// "aumento" se toma como un id.
+// GET  = vista previa (no cambia nada) · POST = aplicar
+router.get(
+  "/menu/aumento",
+  roles("ENCARGADO"),
+  asyncHandler(c.vistaAumento)
+);
+
+router.post(
+  "/menu/aumento",
+  roles("ENCARGADO"),
+  asyncHandler(c.aplicarAumento)
+);
+
 router.put(
   "/menu/:id",
   roles("ENCARGADO"),
