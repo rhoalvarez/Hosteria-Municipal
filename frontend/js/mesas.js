@@ -1,5 +1,6 @@
 /* =========================================================
    mesas.js — Pantalla de mesas (RF-MES) + pedidos por QR (RF-QR)
+              + cobro de la mesa (RF-CAJ-04/05)
    ---------------------------------------------------------
    Muestra las mesas del salón con su estado (libre, ocupada,
    cuenta pedida). La usan el mozo y el encargado.
@@ -8,7 +9,10 @@
                                  o descartarlo (Inc. 2)
      - libre         → cuántas personas → pantalla de pedido
      - ocupada       → ver pedidos, agregar pedido, pedir cuenta
-     - cuenta pedida → solo ver (el cobro es de Caja, Inc. 3)
+     - cuenta pedida → solo ver
+     - ocupada o cuenta pedida + ENCARGADO → botón "Cobrar" (Inc. 3):
+       formas de pago (pago dividido) o sin cargo. Al cobrar, la
+       comanda se cierra y la mesa queda libre.
    Los datos SIEMPRE se piden a api.js, nunca con fetch directo.
    ========================================================= */
 
@@ -65,6 +69,26 @@ const avisoCuenta = document.getElementById('aviso-cuenta');
 const errorOcupada = document.getElementById('error-ocupada');
 const btnAgregar = document.getElementById('btn-agregar');
 const btnPedirCuenta = document.getElementById('btn-pedir-cuenta');
+const btnCobrar = document.getElementById('btn-cobrar');
+
+// Vista de cobro (Inc. 3) — solo el encargado
+const vistaCobro = document.getElementById('vista-cobro');
+const formCobro = document.getElementById('form-cobro');
+const cargandoCobro = document.getElementById('cargando-cobro');
+const cobroContenido = document.getElementById('cobro-contenido');
+const cobroComanda = document.getElementById('cobro-comanda');
+const cobroTotal = document.getElementById('cobro-total');
+const checkSinCargo = document.getElementById('check-sin-cargo');
+const cobroPagos = document.getElementById('cobro-pagos');
+const listaPagos = document.getElementById('lista-pagos');
+const btnAgregarPago = document.getElementById('btn-agregar-pago');
+const cobroResto = document.getElementById('cobro-resto');
+const cobroSinCargo = document.getElementById('cobro-sin-cargo');
+const inputMotivo = document.getElementById('input-motivo');
+const errorCobro = document.getElementById('error-cobro');
+const btnCobroVolver = document.getElementById('btn-cobro-volver');
+const btnConfirmarCobro = document.getElementById('btn-confirmar-cobro');
+const plantillaPago = document.getElementById('plantilla-pago');
 
 // Vista de pedido por QR (Inc. 2)
 const vistaQr = document.getElementById('vista-qr');
@@ -89,6 +113,11 @@ let pedidoQrAbierto = null;      // el pedido QR que se está revisando
 let resolviendoQr = false;       // true mientras se confirma o descarta (evita doble toque)
 let confirmandoDescarte = false; // true después del primer toque en "Descartar"
 
+// Estado del cobro abierto en el panel (Inc. 3)
+let cuentaCobro = null;        // { id_comanda, numero, total, ... } de obtenerCuentaMesa
+let cobrando = false;          // true mientras se manda el cobro (evita doble cobro)
+let confirmandoCobro = false;  // true después del primer toque en "Cobrar"
+
 // Actualización automática
 let temporizador = null;    // el setTimeout de la próxima actualización
 let actualizando = false;   // true mientras hay una petición en curso
@@ -97,6 +126,11 @@ let ultimoDibujo = '';      // las mesas de la última vez, como texto
 // 1) Control de rol: si no tiene permiso, exigirRol lo redirige
 //    y devuelve null. En ese caso no hacemos nada más.
 const sesion = exigirRol(['encargado', 'mozo']);
+
+// Solo el encargado cobra (en la hostería las recepcionistas
+// entran con este rol). Es solo para mostrar u ocultar botones:
+// la seguridad real es el backend (rutas /api/caja → 403).
+const esEncargado = sesion !== null && sesion.usuario.rol === 'encargado';
 
 if (sesion) {
   iniciarPantalla();
@@ -116,8 +150,11 @@ function iniciarPantalla() {
   // El ABM del menú es solo del encargado: a los demás no les mostramos el botón.
   // Ocultarlo es solo interfaz: igual menu.html usa exigirRol(['encargado'])
   // y el backend tiene que rechazar las rutas del menú para otros roles.
-  if (sesion.usuario.rol === 'encargado') {
+  // Lo mismo con la Caja (Inc. 3): caja.html usa exigirRol(['encargado'])
+  // y las rutas /api/caja responden 403 a los otros roles.
+  if (esEncargado) {
     document.getElementById('enlace-menu').hidden = false;
+    document.getElementById('enlace-caja').hidden = false;
   }
 
   // UN solo "escuchador" para toda la grilla (delegación de eventos)
@@ -126,6 +163,19 @@ function iniciarPantalla() {
   formPersonas.addEventListener('submit', tomarPedido);
   btnAgregar.addEventListener('click', agregarPedido);
   btnPedirCuenta.addEventListener('click', pedirCuenta);
+
+  // Cobro (Inc. 3)
+  btnCobrar.addEventListener('click', abrirVistaCobro);
+  btnCobroVolver.addEventListener('click', volverDeCobro);
+  formCobro.addEventListener('submit', confirmarCobro);
+  checkSinCargo.addEventListener('change', alCambiarSinCargo);
+  inputMotivo.addEventListener('input', reiniciarBotonCobro);
+  btnAgregarPago.addEventListener('click', agregarOtroPago);
+  // Delegación: UN escuchador para todas las filas de pago,
+  // aunque se agreguen o quiten filas después
+  listaPagos.addEventListener('input', alCambiarPago);
+  listaPagos.addEventListener('change', alCambiarPago);
+  listaPagos.addEventListener('click', alQuitarPago);
 
   // Pedido por QR: "Enviar a cocina" es el submit del formulario
   // (así también funciona la tecla Enter / "Ir" del teclado del celular)
@@ -328,6 +378,7 @@ function abrirPanel(mesa) {
   vistaLibre.hidden = true;
   vistaOcupada.hidden = true;
   vistaQr.hidden = true;
+  vistaCobro.hidden = true;
   panelFondo.hidden = false;
 
   // Si hay un pedido QR esperando, eso es lo primero: el cliente
@@ -344,16 +395,21 @@ function abrirPanel(mesa) {
 function cerrarPanel() {
   // Mientras se confirma o descarta un pedido QR no se cierra:
   // así el mozo siempre ve cómo terminó
-  if (resolviendoQr) return;
+  // Lo mismo mientras se está cobrando: que no quede la duda
+  // de si el cobro se hizo o no
+  if (resolviendoQr || cobrando) return;
 
   panelFondo.hidden = true;
   vistaLibre.hidden = true;
   vistaOcupada.hidden = true;
   vistaQr.hidden = true;
+  vistaCobro.hidden = true;
   mesaSeleccionada = null;
   pedidoQrAbierto = null;
+  cuentaCobro = null;
   reiniciarBotonCuenta();
   reiniciarBotonDescartar();
+  reiniciarBotonCobro();
 }
 
 /* =========================================================
@@ -399,6 +455,9 @@ async function abrirVistaOcupada(mesa) {
   btnAgregar.hidden = esCuentaPedida;
   btnPedirCuenta.hidden = esCuentaPedida;
   avisoCuenta.hidden = !esCuentaPedida;
+  // "Cobrar": solo el encargado, con la mesa ocupada o la cuenta pedida
+  // (en un bar a veces se cobra sin que el mozo haya pedido la cuenta)
+  btnCobrar.hidden = !esEncargado;
 
   // Mientras cargan los pedidos
   errorOcupada.hidden = true;
@@ -735,6 +794,309 @@ function reiniciarBotonDescartar() {
   btnQrDescartar.textContent = 'Descartar pedido';
 }
 
+/* =========================================================
+   COBRO DE LA MESA (Inc. 3 – RF-CAJ-04/05) — solo el encargado
+   ---------------------------------------------------------
+   1. Se piden a la vez el turno de caja y la cuenta de la mesa.
+      Si la caja está cerrada, no se puede cobrar.
+   2. El total sale de la BASE (rest_comanda.total), no de sumar
+      los ítems en pantalla: es el mismo con el que el backend
+      compara el cobro.
+   3. Formas de pago: hasta MAX_PAGOS filas (pago dividido).
+      Tienen que sumar justo el total. O "Sin cargo" con motivo.
+   4. "Cobrar" se confirma con dos toques, como "Pedir cuenta".
+   5. Al cobrar, el backend cierra la comanda: la mesa queda libre.
+   MAX_PAGOS, MEDIOS_TRANSFERENCIA, aCentavos, limpiarPagos y
+   validarCobro están en api.js: son LAS MISMAS reglas que usa
+   cobrarComanda, así no hay dos versiones distintas.
+   ========================================================= */
+async function abrirVistaCobro() {
+  const mesa = mesaSeleccionada;
+  if (!mesa || !esEncargado) return;
+
+  panelTitulo.textContent = 'Mesa ' + mesa.numero + ' · Cobrar';
+  vistaOcupada.hidden = true;
+
+  // Limpiamos lo que haya quedado de la vez anterior
+  cuentaCobro = null;
+  reiniciarBotonCobro();
+  btnConfirmarCobro.disabled = true;  // hasta que cargue la cuenta
+  errorCobro.hidden = true;
+  cobroContenido.hidden = true;
+  checkSinCargo.checked = false;
+  inputMotivo.value = '';
+  listaPagos.textContent = '';
+  cobroResto.textContent = '';
+  cargandoCobro.hidden = false;
+  vistaCobro.hidden = false;
+
+  try {
+    // Las dos consultas A LA VEZ (Promise.all): tarda lo que la más
+    // lenta, no la suma de las dos
+    const [caja, cuenta] = await Promise.all([
+      obtenerTurnoActual(),
+      obtenerCuentaMesa(mesa.id)
+    ]);
+
+    // Mientras esperábamos, pudo cerrar el panel, volver o tocar otra mesa
+    if (!mesaSeleccionada || mesaSeleccionada.id !== mesa.id || vistaCobro.hidden) return;
+
+    if (!caja.abierto) {
+      mostrarErrorCobro('La caja está cerrada. Abrila desde el botón Caja (arriba) y volvé a cobrar.');
+      return;
+    }
+    if (!cuenta) {
+      // Otro encargado la cobró hace un momento (o se cerró la comanda)
+      mostrarErrorCobro('Esta mesa ya no tiene una cuenta abierta. Puede que ya se haya cobrado.');
+      actualizar();
+      return;
+    }
+
+    cuentaCobro = cuenta;
+    cobroComanda.textContent = 'Comanda N° ' + cuenta.numero + ' · ' +
+      cuenta.personas + (Number(cuenta.personas) === 1 ? ' persona' : ' personas') +
+      (cuenta.mozo ? ' · Mozo: ' + cuenta.mozo : '');
+    cobroTotal.textContent = formatoPesos(cuenta.total);
+
+    // Arranca con UNA fila: efectivo por el total (lo más común).
+    // Si la cuenta está en $ 0 (no se pidió nada), se cierra sin pagos.
+    if (cuenta.total > 0) {
+      agregarFilaPago('efectivo', cuenta.total);
+    }
+    actualizarFilasPago();
+    alCambiarSinCargo();
+
+    cobroContenido.hidden = false;
+    btnConfirmarCobro.disabled = false;
+  } catch (error) {
+    manejarError(error, mostrarErrorCobro);
+  } finally {
+    cargandoCobro.hidden = true;
+  }
+}
+
+// "Volver": a la vista de la mesa (pedidos y total)
+function volverDeCobro() {
+  if (cobrando || !mesaSeleccionada) return;
+  vistaCobro.hidden = true;
+  cuentaCobro = null;
+  reiniciarBotonCobro();
+  const mesa = mesaSeleccionada;
+  panelTitulo.textContent = 'Mesa ' + mesa.numero + ' · ' +
+    (TEXTO_ESTADO[mesa.estado] || mesa.estado);
+  abrirVistaOcupada(mesa);
+}
+
+/* Agrega una fila de pago copiando la <template> de mesas.html.
+   cloneNode(true) copia la fila con todo lo que tiene adentro. */
+function agregarFilaPago(forma, importe) {
+  if (listaPagos.children.length >= MAX_PAGOS) return null;
+
+  const fila = plantillaPago.content.firstElementChild.cloneNode(true);
+  const selectForma = fila.querySelector('.pago__forma');
+  const inputImporte = fila.querySelector('.pago__importe');
+  const selectMedio = fila.querySelector('.pago__medio');
+
+  // Los medios salen de api.js (BNA+, Mercado Pago...): a confirmar
+  // con la hostería, y si cambian se tocan en UN solo lugar
+  for (const medio of MEDIOS_TRANSFERENCIA) {
+    const opcion = document.createElement('option');
+    opcion.value = medio;
+    opcion.textContent = medio;
+    selectMedio.append(opcion);
+  }
+
+  selectForma.value = forma;
+  inputImporte.value = importe > 0 ? importe : '';
+  selectMedio.hidden = forma !== 'transferencia';
+
+  listaPagos.append(fila);
+  return fila;
+}
+
+/* "+ Agregar otra forma de pago": la fila nueva viene con lo que
+   FALTA para llegar al total. Si el cliente paga una parte en
+   efectivo, el encargado corrige el importe de la primera fila y
+   en la nueva ya aparece el resto. Por defecto, transferencia
+   (lo más común como segundo pago). */
+function agregarOtroPago() {
+  if (!cuentaCobro) return;
+  const falta = (aCentavos(cuentaCobro.total) - sumaPagosCentavos()) / 100;
+  const fila = agregarFilaPago('transferencia', falta > 0 ? falta : 0);
+  if (!fila) return;
+  actualizarFilasPago();
+  reiniciarBotonCobro();
+  // En transferencia lo primero que falta elegir es el medio
+  fila.querySelector('.pago__medio').focus();
+}
+
+// Tocar ✕ en una fila (delegación de eventos)
+function alQuitarPago(evento) {
+  const boton = evento.target.closest('.pago__quitar');
+  if (!boton || boton.disabled) return;
+  boton.closest('.pago').remove();
+  actualizarFilasPago();
+  reiniciarBotonCobro();
+}
+
+// Cambió la forma, el importe o el medio de alguna fila
+function alCambiarPago(evento) {
+  const fila = evento.target.closest('.pago');
+  if (!fila) return;
+
+  // Si cambió la forma: el medio solo se muestra en transferencia
+  if (evento.target.classList.contains('pago__forma')) {
+    const selectMedio = fila.querySelector('.pago__medio');
+    selectMedio.hidden = evento.target.value !== 'transferencia';
+    if (selectMedio.hidden) selectMedio.value = '';
+  }
+
+  actualizarResto();
+  reiniciarBotonCobro(); // si cambió algo, hay que volver a confirmar
+}
+
+/* Habilita o deshabilita los botones según cuántas filas hay:
+   - no se puede agregar más de MAX_PAGOS
+   - no se puede quitar la ÚLTIMA fila (si la cuenta es mayor a $ 0) */
+function actualizarFilasPago() {
+  const filas = listaPagos.querySelectorAll('.pago');
+  btnAgregarPago.disabled = filas.length >= MAX_PAGOS || !cuentaCobro || cuentaCobro.total === 0;
+  filas.forEach(f => {
+    f.querySelector('.pago__quitar').disabled = filas.length === 1;
+  });
+  actualizarResto();
+}
+
+// Lee las filas de pago tal como están en pantalla
+function leerPagos() {
+  return Array.from(listaPagos.querySelectorAll('.pago')).map(fila => ({
+    forma: fila.querySelector('.pago__forma').value,
+    importe: fila.querySelector('.pago__importe').value,
+    medio: fila.querySelector('.pago__medio').value
+  }));
+}
+
+// Suma de los importes en CENTAVOS (ver aCentavos en api.js).
+// Un importe vacío o mal escrito cuenta como 0.
+function sumaPagosCentavos() {
+  return leerPagos().reduce((suma, p) => {
+    const n = Number(p.importe);
+    return suma + (Number.isFinite(n) && n > 0 ? aCentavos(n) : 0);
+  }, 0);
+}
+
+/* Renglón "Falta / Sobra / ✔": se actualiza mientras escribe.
+   Ojo: se carga lo que se COBRA, no con cuánto paga el cliente.
+   Si paga $ 20.000 una cuenta de $ 17.000, se cargan $ 17.000
+   (el vuelto no entra en la caja). */
+function actualizarResto() {
+  if (!cuentaCobro || checkSinCargo.checked) {
+    cobroResto.textContent = '';
+    return;
+  }
+  const diferencia = aCentavos(cuentaCobro.total) - sumaPagosCentavos();
+
+  if (diferencia > 0) {
+    cobroResto.textContent = 'Falta ' + formatoPesos(diferencia / 100);
+    cobroResto.className = 'cobro-resto cobro-resto--falta';
+  } else if (diferencia < 0) {
+    cobroResto.textContent = 'Sobra ' + formatoPesos(-diferencia / 100) +
+      ': cargá lo que se cobra, no con cuánto paga el cliente';
+    cobroResto.className = 'cobro-resto cobro-resto--sobra';
+  } else {
+    cobroResto.textContent = '✔ Los pagos suman el total';
+    cobroResto.className = 'cobro-resto cobro-resto--ok';
+  }
+}
+
+// "Sin cargo": se ocultan los pagos y se pide el motivo
+function alCambiarSinCargo() {
+  const sinCargo = checkSinCargo.checked;
+  cobroPagos.hidden = sinCargo;
+  cobroSinCargo.hidden = !sinCargo;
+  errorCobro.hidden = true;
+  reiniciarBotonCobro();
+  actualizarResto();
+  if (sinCargo) inputMotivo.focus();
+}
+
+/* "Cobrar" con confirmación en dos toques.
+   Primer toque: validamos (mismas reglas que api.js) y pedimos
+   confirmación mostrando el importe. Segundo toque: se cobra. */
+async function confirmarCobro(evento) {
+  evento.preventDefault(); // que el formulario no recargue la página
+  if (cobrando || !cuentaCobro) return;
+
+  const sinCargo = checkSinCargo.checked;
+  const datos = {
+    total: cuentaCobro.total,          // el total que se MOSTRÓ
+    sin_cargo: sinCargo,
+    motivo: inputMotivo.value.trim(),
+    pagos: sinCargo ? [] : leerPagos()
+  };
+
+  if (!confirmandoCobro) {
+    // Validamos antes de pedir confirmación, así el error aparece
+    // al primer toque. limpiarPagos hace una COPIA: no toca la pantalla.
+    try {
+      validarCobro(datos.total, sinCargo ? [] : limpiarPagos(datos.pagos), sinCargo, datos.motivo);
+    } catch (error) {
+      mostrarErrorCobro(error.message);
+      if (sinCargo) inputMotivo.focus();
+      return;
+    }
+    errorCobro.hidden = true;
+    confirmandoCobro = true;
+    btnConfirmarCobro.textContent = sinCargo
+      ? '¿Sin cargo? Tocá de nuevo'
+      : '¿Cobrar ' + formatoPesos(datos.total) + '? Tocá de nuevo';
+    return;
+  }
+
+  // Segundo toque: se cobra. Bloqueamos todo para que un doble
+  // toque no mande dos cobros (igual el backend rechaza el segundo:
+  // la comanda ya quedó cerrada).
+  const mesa = mesaSeleccionada;
+  const cuenta = cuentaCobro;
+  cobrando = true;
+  btnConfirmarCobro.disabled = true;
+  btnCobroVolver.disabled = true;
+  btnConfirmarCobro.textContent = 'Cobrando…';
+
+  try {
+    await cobrarComanda(cuenta.id_comanda, datos);
+    cobrando = false;
+    btnCobroVolver.disabled = false;
+    cerrarPanel();
+    avisoPendiente = sinCargo
+      ? 'Mesa ' + mesa.numero + ' cerrada sin cargo ✔ (Comanda N° ' + cuenta.numero + ')'
+      : 'Mesa ' + mesa.numero + ' cobrada ✔ ' + formatoPesos(cuenta.total) +
+        ' (Comanda N° ' + cuenta.numero + ')';
+    actualizar(); // la mesa pasa a libre en la grilla, sin esperar 5 s
+  } catch (error) {
+    cobrando = false;
+    btnCobroVolver.disabled = false;
+    reiniciarBotonCobro();
+
+    // Si el mozo agregó algo mientras se cobraba, el backend avisa que
+    // el total cambió: volvemos a traer la cuenta y mostramos el aviso
+    if (/total de la cuenta cambi/i.test(error.message)) {
+      await abrirVistaCobro();
+      mostrarErrorCobro('La cuenta cambió (se agregó o anuló algo). Revisá el total nuevo y volvé a cobrar.');
+      return;
+    }
+    manejarError(error, mostrarErrorCobro);
+  }
+}
+
+// Deja el botón "Cobrar" como al principio
+function reiniciarBotonCobro() {
+  confirmandoCobro = false;
+  if (cobrando) return;
+  btnConfirmarCobro.disabled = false;
+  btnConfirmarCobro.textContent = checkSinCargo.checked ? 'Cerrar sin cargo' : 'Cobrar';
+}
+
 /* ---------- Mensajes al usuario ---------- */
 function mostrarError(texto) {
   mensaje.textContent = texto;
@@ -761,4 +1123,9 @@ function mostrarErrorOcupada(texto) {
 function mostrarErrorQr(texto) {
   errorQr.textContent = texto;
   errorQr.hidden = false;
+}
+
+function mostrarErrorCobro(texto) {
+  errorCobro.textContent = texto;
+  errorCobro.hidden = false;
 }
