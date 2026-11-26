@@ -53,6 +53,23 @@ function validarItems(items) {
   }
 }
 
+/* Prepara los ítems para mandarlos a los procedimientos.
+   Copia solo los campos que usan (id_item, cantidad, observaciones)
+   y convierte las observaciones vacías o null en ''.
+   Por qué: si el JSON lleva "observaciones": null, en MariaDB
+   JSON_UNQUOTE(JSON_EXTRACT(...)) devuelve el TEXTO 'null', y en la
+   cocina aparecía la aclaración "⚠ null". */
+function itemsParaProcedimiento(items) {
+  return items.map((item) => ({
+    id_item: Number(item.id_item),
+    cantidad: Number(item.cantidad),
+    observaciones:
+      item.observaciones == null
+        ? ""
+        : String(item.observaciones).trim(),
+  }));
+}
+
 // =====================================================
 // CREAR COMANDA Y PRIMER PEDIDO
 // =====================================================
@@ -97,7 +114,7 @@ exports.pedidoInicial = async (req, res) => {
     uid.trim(),
     origen,
     req.user.id_usuario,
-    JSON.stringify(items),
+    JSON.stringify(itemsParaProcedimiento(items)),
   ]);
 
   await audit(
@@ -197,7 +214,7 @@ exports.crearPedido = async (req, res) => {
     uid.trim(),
     origen,
     req.user.id_usuario,
-    JSON.stringify(items),
+    JSON.stringify(itemsParaProcedimiento(items)),
   ]);
 
   await audit(
@@ -381,8 +398,10 @@ exports.qrMenu = async (req, res) => {
     throw new HttpError(404, "La mesa no existe o está inactiva.");
   }
 
+  // Se incluye la letra (A, B, D): el frontend agrupa y ordena
+  // el menú por letra, igual que en la pantalla del mozo.
   const [categorias] = await pool.query(
-    `SELECT DISTINCT c.id_categoria, c.nombre
+    `SELECT DISTINCT c.id_categoria, c.letra, c.nombre
      FROM rest_categoria c
      INNER JOIN rest_item_menu i
        ON i.id_categoria = c.id_categoria
@@ -459,6 +478,8 @@ exports.qrCrearPedido = async (req, res) => {
     const idMesa = Number(mesas[0].id_mesa);
 
     // Evitar duplicados por reintentos del cliente.
+    // (Va ANTES del control de la cuenta: si el cliente reintenta un
+    //  pedido que ya entró, se le responde lo mismo que la primera vez.)
     const [existentes] = await connection.query(
       `SELECT id_pedido_qr, estado
        FROM rest_pedido_qr
@@ -474,6 +495,25 @@ exports.qrCrearPedido = async (req, res) => {
         mensaje: "Este pedido QR ya fue recibido.",
         ...existentes[0],
       });
+    }
+
+    // Con la cuenta pedida no se aceptan pedidos QR (RF-QR-04 de la ERS):
+    // la mesa ya está por cobrarse.
+    const [cuentaPedida] = await connection.query(
+      `SELECT id_comanda
+       FROM rest_comanda
+       WHERE id_mesa = ?
+         AND estado = 'ABIERTA'
+         AND cuenta_pedida IS NOT NULL
+       LIMIT 1`,
+      [idMesa]
+    );
+
+    if (cuentaPedida.length) {
+      throw new HttpError(
+        409,
+        "La cuenta de esta mesa ya fue pedida. Llamá al mozo."
+      );
     }
 
     // Solo un pedido QR pendiente por mesa.
@@ -566,8 +606,12 @@ exports.qrCrearPedido = async (req, res) => {
 // QR: PEDIDOS PENDIENTES PARA MOZO / ENCARGADO
 // =====================================================
 
+// Devuelve UNA FILA POR ÍTEM (como cocina y los pedidos de la mesa);
+// el frontend las agrupa por id_pedido_qr.
+// No se usa JSON_ARRAYAGG: esa función existe recién desde MariaDB 10.5,
+// y el XAMPP de la hostería trae MariaDB 10.4 (daba error 500).
 exports.qrPedidosPendientes = async (req, res) => {
-  const [pedidos] = await pool.query(
+  const [filas] = await pool.query(
     `SELECT
         qr.id_pedido_qr,
         qr.uid,
@@ -580,18 +624,12 @@ exports.qrPedidosPendientes = async (req, res) => {
           WHEN c.id_comanda IS NOT NULL THEN 'OCUPADA'
           ELSE 'LIBRE'
         END AS estado_mesa,
-        COALESCE(
-          JSON_ARRAYAGG(
-            JSON_OBJECT(
-              'id_item', qi.id_item,
-              'nombre', i.nombre,
-              'precio', i.precio,
-              'cantidad', qi.cantidad,
-              'observaciones', qi.observaciones
-            )
-          ),
-          JSON_ARRAY()
-        ) AS items
+        qi.id_item,
+        i.codigo,
+        i.nombre,
+        i.precio,
+        qi.cantidad,
+        qi.observaciones
      FROM rest_pedido_qr qr
      INNER JOIN rest_mesa m
        ON m.id_mesa = qr.id_mesa
@@ -603,19 +641,10 @@ exports.qrPedidosPendientes = async (req, res) => {
      INNER JOIN rest_item_menu i
        ON i.id_item = qi.id_item
      WHERE qr.estado = 'POR_CONFIRMAR'
-     GROUP BY
-        qr.id_pedido_qr,
-        qr.uid,
-        qr.estado,
-        qr.creado,
-        m.id_mesa,
-        m.numero,
-        c.id_comanda,
-        c.cuenta_pedida
-     ORDER BY qr.creado ASC`
+     ORDER BY qr.creado, qr.id_pedido_qr, qi.id_pedido_qr_item`
   );
 
-  res.json(pedidos);
+  res.json(filas);
 };
 
 // =====================================================
@@ -703,7 +732,7 @@ exports.qrResolverPedido = async (req, res) => {
       );
     }
 
-    itemsQr = items;
+    itemsQr = itemsParaProcedimiento(items);
 
     if (mesaLibre) {
       const personas = Number(personasRaw);
