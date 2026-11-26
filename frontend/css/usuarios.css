@@ -1,0 +1,129 @@
+/* =========================================================
+   usuarios.css — Pantalla de usuarios (RF-USU-03)
+   ---------------------------------------------------------
+   Pensada primero para celular: cada usuario es una tarjeta
+   con los botones abajo. En pantallas anchas (tablet, PC) los
+   botones pasan a la derecha.
+   Las tarjetas, subtítulos y textos de ayuda vienen de
+   estilos.css y caja.css: acá solo va lo propio de esta pantalla.
+   ========================================================= */
+
+/* Si una clase pone "display", le gana al atributo hidden y el
+   elemento se vería igual. Con esto, hidden siempre oculta. */
+.usu-form[hidden],
+.usu-item [hidden],
+#campos-clave-alta[hidden] {
+  display: none !important;
+}
+
+/* ---------- Formularios ---------- */
+
+.usu-form {
+  margin: 1rem 0;
+}
+
+.usu-botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* Usuario bloqueado al editar: que se note que no se cambia */
+.usu-form input:disabled {
+  background: #eeeeee;
+  color: #666666;
+}
+
+/* ---------- Lista ---------- */
+
+.usu-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.usu-item {
+  display: flex;
+  flex-direction: column; /* celular: datos arriba, botones abajo */
+  gap: 0.75rem;
+}
+
+.usu-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.usu-item__nombre {
+  font-size: 1.1rem;
+}
+
+.usu-item__datos {
+  color: #555555;
+}
+
+/* Etiquetas: texto + color (el color solo no alcanza) */
+.usu-item__estado,
+.usu-item__aviso {
+  align-self: flex-start;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.usu-item__estado {
+  background: #f3d6d6;
+  color: #8a1f1f;
+  font-weight: bold;
+}
+
+.usu-item__aviso {
+  background: #fff3cd;
+  color: #6b5200;
+}
+
+/* Usuario desactivado: tarjeta apagada */
+.usu-item--inactivo .usu-item__nombre,
+.usu-item--inactivo .usu-item__datos {
+  opacity: 0.6;
+}
+
+.usu-item__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Botones cómodos para el dedo en el celular (mínimo ~44 px) */
+.usu-item__acciones .boton {
+  min-height: 44px;
+  flex: 1 1 auto;
+}
+
+/* Segundo toque de "Desactivar": que se vea que es para confirmar */
+.usu-item__acciones .boton.usu-confirmar {
+  background: #8a1f1f;
+  border-color: #8a1f1f;
+  color: #ffffff;
+}
+
+/* ---------- Pantallas anchas (tablet / PC) ---------- */
+@media (min-width: 700px) {
+  .usu-item {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .usu-item__acciones {
+    flex-wrap: nowrap;
+  }
+
+  .usu-item__acciones .boton {
+    flex: 0 0 auto;
+  }
+}

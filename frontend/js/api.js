@@ -1782,3 +1782,145 @@ async function obtenerIngresos(desde, hasta, agrupar) {
   const porPeriodo = new Map(filas.map(f => [f.periodo, f]));
   return periodosEntre(fd, fh, modo).map(p => adaptarIngreso(p, porPeriodo.get(p)));
 }
+
+/* =========================================================
+   USUARIOS — ABM (RF-USU-03)
+   ---------------------------------------------------------
+   Rutas /api/usuarios/... solo para el ENCARGADO (el backend
+   responde 403 a los demás).
+
+   Sin versión mock, igual que la caja: las reglas (no quedarse
+   sin encargado, no desactivarse a uno mismo, usuarios que también
+   son de reservas o stock) viven en usuarios.controller.js.
+
+   La tabla "usuario" la comparten los tres sistemas: el backend
+   solo devuelve y toca los usuarios con rol en el restaurante.
+   Un usuario nunca se borra: se desactiva.
+   ========================================================= */
+
+const ROLES_USUARIO = ['encargado', 'mozo', 'cocina'];
+// Las mismas reglas que el backend
+const FORMATO_USUARIO_LOGIN = /^[a-zA-Z0-9._-]{3,50}$/;
+const LARGO_MIN_CLAVE = 8;
+
+function usuariosSoloBackendReal() {
+  throw errorApi('Los usuarios funcionan solo con el backend real: poné USAR_MOCK = false en api.js', 501);
+}
+
+// Fila del backend → formato de las pantallas (rol en minúscula, como el login)
+function adaptarUsuario(u) {
+  return {
+    id: u.id_usuario,
+    nombre: u.nombre,
+    usuario: u.usuario,
+    rol: aMinuscula(u.rol),
+    activo: aBooleano(u.activo),
+    creado: u.creado,
+    otros_sistemas: aBooleano(u.otros_sistemas) // true = también lo usa reservas o stock
+  };
+}
+
+/* ---------- Validaciones (las mismas que el backend) ---------- */
+
+function validarNombreUsuario(nombre) {
+  if (nombre.length < 2 || nombre.length > 100) {
+    throw errorApi('El nombre debe tener entre 2 y 100 letras', 400);
+  }
+}
+
+function validarRolUsuario(rol) {
+  if (!ROLES_USUARIO.includes(rol)) {
+    throw errorApi('Elegí un rol: encargado, mozo o cocina', 400);
+  }
+}
+
+function validarClaveUsuario(clave) {
+  if (typeof clave !== 'string' || clave.length < LARGO_MIN_CLAVE) {
+    throw errorApi('La contraseña debe tener al menos ' + LARGO_MIN_CLAVE + ' caracteres', 400);
+  }
+}
+
+function validarIdUsuario(id) {
+  const n = Number(id);
+  if (!Number.isInteger(n) || n < 1) {
+    throw errorApi('No se encontró el usuario. Actualizá la pantalla.', 400);
+  }
+  return n;
+}
+
+/* ---------- Funciones públicas ---------- */
+
+// Lista de usuarios del restaurante (activos primero)
+async function obtenerUsuarios() {
+  if (USAR_MOCK) usuariosSoloBackendReal();
+  const filas = await peticion('GET', '/usuarios');
+  return filas.map(adaptarUsuario);
+}
+
+/* Alta. datos = { nombre, usuario, clave, rol: 'mozo' }
+   409 si el usuario ya existe (puede ser de reservas o stock).
+   Devuelve { id }. */
+async function crearUsuario(datos) {
+  if (USAR_MOCK) usuariosSoloBackendReal();
+
+  const nombre = String(datos.nombre || '').trim();
+  const usuario = String(datos.usuario || '').trim();
+  const rol = aMinuscula(String(datos.rol || '').trim());
+  const clave = datos.clave;
+
+  validarNombreUsuario(nombre);
+  if (!FORMATO_USUARIO_LOGIN.test(usuario)) {
+    throw errorApi('El usuario debe tener de 3 a 50 caracteres: letras, números, punto, guion o guion bajo, sin espacios', 400);
+  }
+  validarClaveUsuario(clave);
+  validarRolUsuario(rol);
+
+  const r = await peticion('POST', '/usuarios', {
+    nombre,
+    usuario,
+    clave,
+    rol: rol.toUpperCase() // el backend usa MAYÚSCULA
+  });
+  return { id: r.id_usuario };
+}
+
+/* Editar nombre y rol. datos = { nombre, rol }
+   El usuario del login no se cambia (propuesta).
+   409 si es el último encargado o si se quita a sí mismo el rol. */
+async function editarUsuario(idUsuario, datos) {
+  if (USAR_MOCK) usuariosSoloBackendReal();
+
+  const id = validarIdUsuario(idUsuario);
+  const nombre = String(datos.nombre || '').trim();
+  const rol = aMinuscula(String(datos.rol || '').trim());
+  validarNombreUsuario(nombre);
+  validarRolUsuario(rol);
+
+  await peticion('PUT', '/usuarios/' + id, { nombre, rol: rol.toUpperCase() });
+  return { id, nombre, rol };
+}
+
+/* Nueva contraseña (mínimo 8). Viaja una sola vez y el backend
+   guarda solo el hash. Devuelve { otros_sistemas }: si es true,
+   la contraseña también cambió en reservas o stock. */
+async function cambiarClaveUsuario(idUsuario, clave) {
+  if (USAR_MOCK) usuariosSoloBackendReal();
+
+  const id = validarIdUsuario(idUsuario);
+  validarClaveUsuario(clave);
+
+  const r = await peticion('PATCH', '/usuarios/' + id + '/clave', { clave });
+  return { otros_sistemas: r.otros_sistemas === true };
+}
+
+/* Activar (true) o desactivar (false).
+   409: desactivarse a uno mismo, último encargado o usuario de otro sistema. */
+async function cambiarActivoUsuario(idUsuario, activo) {
+  if (USAR_MOCK) usuariosSoloBackendReal();
+
+  const id = validarIdUsuario(idUsuario);
+  if (typeof activo !== 'boolean') throw errorApi('Activo debe ser verdadero o falso', 400);
+
+  await peticion('PATCH', '/usuarios/' + id + '/activo', { activo });
+  return { id, activo };
+}
