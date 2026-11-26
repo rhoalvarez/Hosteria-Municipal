@@ -11,6 +11,9 @@
                     movimiento manual (gastos) y cierre con arqueo.
    - Siempre      → historial de turnos (se carga con un botón)
                     y detalle de cada turno (solo lectura).
+   - Exportar a CSV los movimientos del turno abierto o de un
+     turno del historial (RF-CAJ-12). Las funciones descargarCsv
+     y celdaCsv están en formato.js (las comparte con Estadísticas).
    Los cobros de las mesas se hacen desde Mesas (botón Cobrar).
    Las cuentas de la caja las hace la BASE (vista v_caja_resumen):
    la pantalla solo muestra lo que le llega. Así hay un solo
@@ -58,6 +61,7 @@ const btnMovimiento = document.getElementById('btn-movimiento');
 const btnCerrarCaja = document.getElementById('btn-cerrar-caja');
 const sinMovimientos = document.getElementById('sin-movimientos');
 const tablaMovimientos = document.getElementById('tabla-movimientos');
+const btnCsvMovimientos = document.getElementById('btn-csv-movimientos');
 
 // Historial de turnos
 const btnHistorial = document.getElementById('btn-historial');
@@ -111,6 +115,7 @@ const errorTurno = document.getElementById('error-turno');
 const turnoDetalleDatos = document.getElementById('turno-detalle-datos');
 const turnoSinMovimientos = document.getElementById('turno-sin-movimientos');
 const turnoDetalleMovimientos = document.getElementById('turno-detalle-movimientos');
+const btnCsvTurno = document.getElementById('btn-csv-turno');
 
 // Estado de la pantalla
 let turnoActual = null;        // el turno abierto (null si la caja está cerrada)
@@ -128,6 +133,11 @@ let avisoPendiente = '';       // "Caja abierta ✔", se muestra en la próxima 
 let historialCargado = false;  // true después de la primera carga (para refrescarlo)
 let cargandoHistorial = false; // evita pedirlo dos veces a la vez
 let numeroDetalle = 0;         // para descartar respuestas viejas del panel de detalle
+
+// Exportar a CSV (RF-CAJ-12): guardamos lo que se está MOSTRANDO,
+// así el archivo tiene exactamente lo mismo que la tabla en pantalla
+let movimientosAbierto = [];   // movimientos del turno abierto
+let detalleMostrado = null;    // { turno, movimientos } del panel de detalle
 
 // Actualización automática
 let temporizador = null;
@@ -179,6 +189,14 @@ function iniciarPantalla() {
   // botones "Ver" (delegación de eventos). Así no hay que agregar
   // uno por fila cada vez que se redibuja.
   btnHistorial.addEventListener('click', cargarHistorial);
+
+  // Exportar movimientos (RF-CAJ-12)
+  btnCsvMovimientos.addEventListener('click', () => {
+    if (turnoActual) exportarMovimientos(turnoActual, movimientosAbierto);
+  });
+  btnCsvTurno.addEventListener('click', () => {
+    if (detalleMostrado) exportarMovimientos(detalleMostrado.turno, detalleMostrado.movimientos);
+  });
   tablaHistorial.addEventListener('click', (evento) => {
     const boton = evento.target.closest('[data-ver-turno]');
     if (boton) verTurno(Number(boton.dataset.verTurno));
@@ -501,6 +519,8 @@ function mostrarAbierta(turno, movimientos) {
     : 'Ninguna sin cargo';
 
   dibujarMovimientos(movimientos, tablaMovimientos, sinMovimientos);
+  movimientosAbierto = movimientos;
+  btnCsvMovimientos.disabled = movimientos.length === 0;
 }
 
 // Transferencias que entraron menos las que salieron (pago a proveedor)
@@ -659,6 +679,8 @@ async function verTurno(idTurno) {
   turnoDetalleMovimientos.textContent = '';
   turnoSinMovimientos.hidden = true;
   errorTurno.hidden = true;
+  detalleMostrado = null;        // hasta que lleguen los datos no se exporta
+  btnCsvTurno.disabled = true;
   panelTurno.hidden = false;
   panelTurno.querySelector('[data-cerrar]').focus();
 
@@ -677,6 +699,8 @@ async function verTurno(idTurno) {
         : ' · todavía abierto');
     llenarArqueo(turnoDetalleDatos, turno);
     dibujarMovimientos(movimientos, turnoDetalleMovimientos, turnoSinMovimientos);
+    detalleMostrado = { turno, movimientos };
+    btnCsvTurno.disabled = movimientos.length === 0;
   } catch (error) {
     if (esteDetalle !== numeroDetalle) return;
     turnoDetalleInfo.textContent = '';
@@ -900,6 +924,45 @@ function reiniciarBotonCierre() {
   btnConfirmarCierre.textContent = 'Cerrar caja';
 }
 
+/* =========================================================
+   EXPORTAR MOVIMIENTOS A CSV (RF-CAJ-12)
+   Las mismas columnas que la planilla de caja de la hostería,
+   para que la administración la pueda seguir usando en Excel.
+   Los importes van como NÚMEROS (sin "$" ni puntos de miles):
+   así Excel los puede sumar.
+   ========================================================= */
+function exportarMovimientos(turno, movimientos) {
+  if (!turno || movimientos.length === 0) return;
+
+  const encabezados = ['Fecha', 'Hora', 'Código', 'Tipo', 'Concepto', 'Forma', 'Medio',
+    'Tipo de comprobante', 'N° de comprobante', 'DNI/CUIT', 'Huésped/proveedor',
+    'Detalle', 'Ingreso', 'Egreso', 'Saldo', 'Usuario'];
+
+  const filas = movimientos.map(m => [
+    fechaCorta(m.fecha),
+    formatearHora(m.fecha),
+    m.codigo,
+    m.tipo === 'egreso' ? 'Egreso' : 'Ingreso',
+    m.concepto,
+    m.forma === 'transferencia' ? 'Transferencia' : 'Efectivo',
+    m.medio,
+    m.tipo_comprobante,
+    m.nro_comprobante,
+    m.dni_cuit,
+    m.huesped_proveedor,
+    m.detalle,
+    m.ingreso,
+    m.egreso,
+    m.saldo,
+    m.usuario
+  ]);
+
+  // "caja_turno_4_2026-11-26.csv" (fecha LOCAL de apertura: fechaATexto, de api.js)
+  const apertura = new Date(turno.apertura);
+  const dia = isNaN(apertura) ? '' : '_' + fechaATexto(apertura);
+  descargarCsv('caja_turno_' + turno.id + dia + '.csv', encabezados, filas);
+}
+
 /* ---------- Paneles ---------- */
 function cerrarPaneles() {
   // Mientras se guarda algo no se cierra: así siempre se ve cómo terminó
@@ -929,6 +992,13 @@ function fechaHora(fechaIso) {
     minute: '2-digit',
     hourCycle: 'h23'
   });
+}
+
+// "2026-11-26T17:00:40.000Z" → "26/11/2026" (fecha local, para el CSV)
+function fechaCorta(fechaIso) {
+  const fecha = new Date(fechaIso);
+  if (isNaN(fecha)) return '';
+  return fecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 // 401 = sesión vencida → al login. Otro error → se muestra.

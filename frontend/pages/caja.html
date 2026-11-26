@@ -123,6 +123,12 @@
           <tbody id="tabla-movimientos"></tbody>
         </table>
       </div>
+
+      <!-- RF-CAJ-12: los movimientos del turno en un archivo que se
+           abre con Excel (las mismas columnas que la planilla de caja) -->
+      <button type="button" id="btn-csv-movimientos" class="boton boton--secundario">
+        Exportar movimientos (CSV)
+      </button>
     </section>
 
     <!-- =====================================================
@@ -345,6 +351,9 @@
       </div>
 
       <div class="panel__acciones">
+        <!-- RF-CAJ-12: exportar los movimientos de este turno.
+             Arranca deshabilitado hasta que lleguen los datos -->
+        <button type="button" id="btn-csv-turno" class="boton boton--secundario" disabled>Exportar (CSV)</button>
         <button type="button" class="boton boton--secundario" data-cerrar>Cerrar</button>
       </div>
     </section>
