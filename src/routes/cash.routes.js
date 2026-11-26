@@ -33,6 +33,9 @@ router.get("/turnos/:id/movimientos", asyncHandler(c.movimientosTurno));
 // Códigos para movimientos manuales (sin COBRO)
 router.get("/codigos", asyncHandler(c.codigosCaja));
 
+// Huéspedes alojados, para el cargo a habitación (RF-HAB)
+router.get("/estadias-activas", asyncHandler(c.estadiasActivas));
+
 // ---------- Apertura, cierre y reapertura ----------
 
 router.post("/turnos/apertura", asyncHandler(c.abrirCaja));
@@ -41,10 +44,18 @@ router.post("/turnos/:id/reapertura", asyncHandler(c.reabrirCaja));
 
 // ---------- Cobros y movimientos ----------
 
-// Cobro de una comanda (pago dividido, sin cargo)
+// Cobro de una comanda (pago dividido, sin cargo, cargo a habitación)
 router.post("/comandas/:id/cobros", asyncHandler(c.cobrarComanda));
 
 // Movimiento manual: gasto, proveedor, ajuste
 router.post("/movimientos", asyncHandler(c.registrarMovimiento));
+
+// ---------- Fotos de comprobantes de transferencia (RF-CAJ-13/14) ----------
+
+// Subir la foto (JSON con la imagen en base64). Devuelve { archivo }
+router.post("/comprobantes", asyncHandler(c.subirComprobante));
+
+// Ver la foto (solo con sesión de encargado: no es una dirección pública)
+router.get("/comprobantes/:archivo", asyncHandler(c.verComprobante));
 
 module.exports = router;

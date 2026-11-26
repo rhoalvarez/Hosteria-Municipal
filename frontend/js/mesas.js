@@ -13,6 +13,8 @@
      - ocupada o cuenta pedida + ENCARGADO → botón "Cobrar" (Inc. 3):
        formas de pago (pago dividido) o sin cargo. Al cobrar, la
        comanda se cierra y la mesa queda libre.
+       Formas: efectivo, transferencia (con foto del comprobante,
+       RF-CAJ-13/14) y cargo a habitación (RF-HAB).
      - ocupada o cuenta pedida + ENCARGADO → botón "Anular" en cada
        plato ya enviado (RF-PED-06): motivo obligatorio y dos toques.
    Los datos SIEMPRE se piden a api.js, nunca con fetch directo.
@@ -117,6 +119,7 @@ let confirmandoDescarte = false; // true después del primer toque en "Descartar
 
 // Estado del cobro abierto en el panel (Inc. 3)
 let cuentaCobro = null;        // { id_comanda, numero, total, ... } de obtenerCuentaMesa
+let estadiasCobro = [];        // huéspedes alojados, para el cargo a habitación
 let cobrando = false;          // true mientras se manda el cobro (evita doble cobro)
 let confirmandoCobro = false;  // true después del primer toque en "Cobrar"
 
@@ -1071,9 +1074,12 @@ async function abrirVistaCobro() {
   try {
     // Las dos consultas A LA VEZ (Promise.all): tarda lo que la más
     // lenta, no la suma de las dos
-    const [caja, cuenta] = await Promise.all([
+    // Los huéspedes alojados también: si esa consulta falla, igual se
+    // puede cobrar en efectivo o transferencia (por eso el .catch).
+    const [caja, cuenta, estadias] = await Promise.all([
       obtenerTurnoActual(),
-      obtenerCuentaMesa(mesa.id)
+      obtenerCuentaMesa(mesa.id),
+      obtenerEstadiasActivas().catch(() => [])
     ]);
 
     // Mientras esperábamos, pudo cerrar el panel, volver o tocar otra mesa
@@ -1091,6 +1097,7 @@ async function abrirVistaCobro() {
     }
 
     cuentaCobro = cuenta;
+    estadiasCobro = estadias;
     cobroComanda.textContent = 'Comanda N° ' + cuenta.numero + ' · ' +
       cuenta.personas + (Number(cuenta.personas) === 1 ? ' persona' : ' personas') +
       (cuenta.mozo ? ' · Mozo: ' + cuenta.mozo : '');
@@ -1144,12 +1151,38 @@ function agregarFilaPago(forma, importe) {
     selectMedio.append(opcion);
   }
 
+  // Huéspedes alojados para el cargo a habitación: "Hab. 5 – Gómez, María".
+  // Si no hay ninguno, la opción queda deshabilitada y lo dice.
+  const selectEstadia = fila.querySelector('.pago__estadia');
+  for (const e of estadiasCobro) {
+    const opcion = document.createElement('option');
+    opcion.value = e.id;
+    opcion.textContent = 'Hab. ' + e.habitacion + ' – ' + e.huesped;
+    selectEstadia.append(opcion);
+  }
+  if (estadiasCobro.length === 0) {
+    const opcionCargo = selectForma.querySelector('option[value="cargo_habitacion"]');
+    opcionCargo.disabled = true;
+    opcionCargo.textContent = 'Cargo a habitación (no hay huéspedes alojados)';
+  }
+
   selectForma.value = forma;
   inputImporte.value = importe > 0 ? importe : '';
-  selectMedio.hidden = forma !== 'transferencia';
+  mostrarCamposPago(fila);
 
   listaPagos.append(fila);
   return fila;
+}
+
+/* Muestra en la fila solo los campos de la forma elegida:
+   - transferencia    → medio + foto del comprobante
+   - cargo_habitacion → habitación
+   - efectivo         → nada más */
+function mostrarCamposPago(fila) {
+  const forma = fila.querySelector('.pago__forma').value;
+  fila.querySelector('.pago__medio').hidden = forma !== 'transferencia';
+  fila.querySelector('.pago__comprobante').hidden = forma !== 'transferencia';
+  fila.querySelector('.pago__estadia').hidden = forma !== 'cargo_habitacion';
 }
 
 /* "+ Agregar otra forma de pago": la fila nueva viene con lo que
@@ -1182,11 +1215,24 @@ function alCambiarPago(evento) {
   const fila = evento.target.closest('.pago');
   if (!fila) return;
 
-  // Si cambió la forma: el medio solo se muestra en transferencia
+  // Eligió una foto: se procesa una sola vez (el input de archivo
+  // dispara "input" y "change": usamos solo "change")
+  if (evento.target.classList.contains('pago__foto')) {
+    if (evento.type === 'change') cargarFotoComprobante(fila, evento.target);
+    return;
+  }
+
+  // Si cambió la forma: mostramos sus campos y borramos los de las otras
   if (evento.target.classList.contains('pago__forma')) {
-    const selectMedio = fila.querySelector('.pago__medio');
-    selectMedio.hidden = evento.target.value !== 'transferencia';
-    if (selectMedio.hidden) selectMedio.value = '';
+    mostrarCamposPago(fila);
+    const forma = evento.target.value;
+    if (forma !== 'transferencia') {
+      fila.querySelector('.pago__medio').value = '';
+      borrarFoto(fila);
+    }
+    if (forma !== 'cargo_habitacion') {
+      fila.querySelector('.pago__estadia').value = '';
+    }
   }
 
   actualizarResto();
@@ -1210,7 +1256,10 @@ function leerPagos() {
   return Array.from(listaPagos.querySelectorAll('.pago')).map(fila => ({
     forma: fila.querySelector('.pago__forma').value,
     importe: fila.querySelector('.pago__importe').value,
-    medio: fila.querySelector('.pago__medio').value
+    medio: fila.querySelector('.pago__medio').value,
+    id_estadia: fila.querySelector('.pago__estadia').value,
+    // Nombre de la foto ya subida (lo guarda cargarFotoComprobante)
+    comprobante: fila.dataset.comprobante || ''
   }));
 }
 
@@ -1273,6 +1322,12 @@ async function confirmarCobro(evento) {
     pagos: sinCargo ? [] : leerPagos()
   };
 
+  // Si una foto se está subiendo, esperamos: si no, el cobro saldría sin ella
+  if (listaPagos.querySelector('.pago[data-subiendo="1"]')) {
+    mostrarErrorCobro('Esperá a que termine de subir la foto del comprobante.');
+    return;
+  }
+
   if (!confirmandoCobro) {
     // Validamos antes de pedir confirmación, así el error aparece
     // al primer toque. limpiarPagos hace una COPIA: no toca la pantalla.
@@ -1306,10 +1361,17 @@ async function confirmarCobro(evento) {
     cobrando = false;
     btnCobroVolver.disabled = false;
     cerrarPanel();
+    // Si una parte fue a la cuenta de una habitación, lo decimos
+    const cargos = sinCargo ? [] : datos.pagos.filter(p => p.forma === 'cargo_habitacion');
+    const textoCargo = cargos.map(p => {
+      const e = estadiasCobro.find(x => String(x.id) === String(p.id_estadia));
+      return formatoPesos(p.importe) + ' a la Hab. ' + (e ? e.habitacion : '?');
+    }).join(', ');
     avisoPendiente = sinCargo
       ? 'Mesa ' + mesa.numero + ' cerrada sin cargo ✔ (Comanda N° ' + cuenta.numero + ')'
       : 'Mesa ' + mesa.numero + ' cobrada ✔ ' + formatoPesos(cuenta.total) +
-        ' (Comanda N° ' + cuenta.numero + ')';
+        ' (Comanda N° ' + cuenta.numero + ')' +
+        (textoCargo ? ' · Cargado ' + textoCargo + ': lo cobra recepción' : '');
     actualizar(); // la mesa pasa a libre en la grilla, sin esperar 5 s
   } catch (error) {
     cobrando = false;
@@ -1325,6 +1387,103 @@ async function confirmarCobro(evento) {
     }
     manejarError(error, mostrarErrorCobro);
   }
+}
+
+/* =========================================================
+   FOTO DEL COMPROBANTE DE TRANSFERENCIA (RF-CAJ-13/14)
+   ---------------------------------------------------------
+   1. El encargado toca "📷 Foto del comprobante": el celular abre
+      la cámara o la galería.
+   2. Achicamos la foto en el navegador con un <canvas> (sin
+      librerías): una foto de celular pesa 3–5 MB, achicada queda en
+      unos 200 KB. Así sube rápido por el wifi y ocupa poco en el
+      servidor.
+   3. La subimos enseguida (subirComprobante, api.js) y guardamos en
+      la fila el nombre que nos devuelve el servidor.
+   4. Al cobrar, ese nombre viaja con el pago.
+   Es OPCIONAL (propuesta): en la caja se ve qué transferencias
+   quedaron "sin comprobante", para controlarlas.
+   ========================================================= */
+const FOTO_LADO_MAXIMO = 1280; // px: se lee bien un comprobante
+const FOTO_CALIDAD = 0.7;      // calidad JPG (0 a 1)
+
+async function cargarFotoComprobante(fila, input) {
+  const archivo = input.files && input.files[0];
+  input.value = ''; // así se puede volver a elegir la misma foto
+  if (!archivo) return;
+
+  const estado = fila.querySelector('.pago__foto-estado');
+  const vista = fila.querySelector('.pago__foto-vista');
+
+  borrarFoto(fila);
+  fila.dataset.subiendo = '1';
+  reiniciarBotonCobro();
+  mostrarEstadoFoto(estado, 'Subiendo foto…', '');
+
+  try {
+    const imagen = await achicarFoto(archivo);
+    const nombre = await subirComprobante(imagen);
+    fila.dataset.comprobante = nombre;
+    vista.src = imagen;   // la misma foto achicada, sin volver a pedirla
+    vista.hidden = false;
+    mostrarEstadoFoto(estado, '✔ Foto cargada', 'ok');
+  } catch (error) {
+    if (error.estado === 401) {
+      manejarError(error, mostrarErrorCobro);
+      return;
+    }
+    mostrarEstadoFoto(estado, error.message + ' Probá de nuevo.', 'error');
+  } finally {
+    delete fila.dataset.subiendo;
+  }
+}
+
+// Saca la foto de la fila (cambió de forma de pago o eligió otra)
+function borrarFoto(fila) {
+  delete fila.dataset.comprobante;
+  const vista = fila.querySelector('.pago__foto-vista');
+  vista.hidden = true;
+  vista.removeAttribute('src');
+  mostrarEstadoFoto(fila.querySelector('.pago__foto-estado'), 'Opcional', '');
+}
+
+function mostrarEstadoFoto(elemento, texto, tipo) {
+  elemento.textContent = texto;
+  elemento.className = 'pago__foto-estado' + (tipo ? ' pago__foto-estado--' + tipo : '');
+}
+
+/* Achica una foto y la devuelve como texto "data:image/jpeg;base64,...".
+   Pasos: archivo → FileReader (texto data:) → <img> → <canvas> más
+   chico → JPG. Usamos data: y no URL.createObjectURL porque la
+   seguridad de la página (helmet) solo deja mostrar imágenes "data:". */
+function achicarFoto(archivo) {
+  return new Promise((resolver, rechazar) => {
+    if (!archivo.type || !archivo.type.startsWith('image/')) {
+      rechazar(new Error('El archivo no es una foto.'));
+      return;
+    }
+
+    const lector = new FileReader();
+    lector.onerror = () => rechazar(new Error('No se pudo leer la foto.'));
+    lector.onload = () => {
+      const img = new Image();
+      img.onerror = () => rechazar(new Error('No se pudo abrir la foto.'));
+      img.onload = () => {
+        // Escala para que el lado más largo mida como máximo FOTO_LADO_MAXIMO
+        const escala = Math.min(1, FOTO_LADO_MAXIMO / Math.max(img.width, img.height));
+        const lienzo = document.createElement('canvas');
+        lienzo.width = Math.round(img.width * escala);
+        lienzo.height = Math.round(img.height * escala);
+        const ctx = lienzo.getContext('2d');
+        ctx.fillStyle = '#fff'; // fondo blanco (un PNG transparente no queda negro)
+        ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+        ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+        resolver(lienzo.toDataURL('image/jpeg', FOTO_CALIDAD));
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(archivo);
+  });
 }
 
 // Deja el botón "Cobrar" como al principio

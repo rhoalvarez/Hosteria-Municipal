@@ -178,20 +178,42 @@
        mesas.js la copia (cloneNode) cada vez que se agrega un pago.
        Así no armamos HTML con texto (innerHTML) en el JavaScript.
        Como puede haber varias filas, no usamos id: cada campo lleva
-       aria-label para que el lector de pantalla diga qué es. -->
+       aria-label para que el lector de pantalla diga qué es.
+       Según la forma elegida, mesas.js muestra:
+       - transferencia    → medio + foto del comprobante (RF-CAJ-13/14)
+       - cargo_habitacion → habitación del huésped (RF-HAB) -->
   <template id="plantilla-pago">
     <div class="pago">
       <select class="pago__forma" aria-label="Forma de pago">
         <option value="efectivo">Efectivo</option>
         <option value="transferencia">Transferencia</option>
+        <option value="cargo_habitacion">Cargo a habitación</option>
       </select>
       <input class="pago__importe" type="number" inputmode="decimal" min="0" step="0.01"
              aria-label="Importe">
+      <button type="button" class="pago__quitar" aria-label="Quitar este pago">✕</button>
+
       <!-- Solo para transferencia: mesas.js le carga los medios -->
       <select class="pago__medio" aria-label="Medio de la transferencia" hidden>
         <option value="">Elegí el medio</option>
       </select>
-      <button type="button" class="pago__quitar" aria-label="Quitar este pago">✕</button>
+
+      <!-- Solo para transferencia: foto del comprobante (opcional).
+           El input está DENTRO del label: tocar el botón abre la cámara
+           o la galería del celular. accept="image/*": solo imágenes. -->
+      <div class="pago__comprobante" hidden>
+        <label class="boton boton--secundario pago__foto-boton">
+          📷 Foto del comprobante
+          <input type="file" class="pago__foto caja-solo-lector" accept="image/*">
+        </label>
+        <span class="pago__foto-estado" aria-live="polite">Opcional</span>
+        <img class="pago__foto-vista" alt="Foto del comprobante cargada" hidden>
+      </div>
+
+      <!-- Solo para cargo a habitación: mesas.js carga los huéspedes alojados -->
+      <select class="pago__estadia" aria-label="Habitación del huésped" hidden>
+        <option value="">Elegí la habitación</option>
+      </select>
     </div>
   </template>
 
