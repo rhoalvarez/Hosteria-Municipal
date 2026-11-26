@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Usuarios · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Reusamos de la caja: tarjetas, subtítulos, textos de ayuda -->
+  <link rel="stylesheet" href="../css/caja.css">
+  <!-- Estilos propios de la lista de usuarios (RF-USU-03) -->
+  <link rel="stylesheet" href="../css/usuarios.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Usuarios</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+    <div class="encabezado__acciones">
+      <!-- Enlaces (<a>) y no botones porque llevan a otra página -->
+      <a href="mesas.html" class="boton boton--secundario">Mesas</a>
+      <a href="caja.html" class="boton boton--secundario">Caja</a>
+      <button id="btn-salir" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Mensajes de la pantalla: "Cargando...", "Guardado ✔", errores -->
+    <p id="mensaje" class="mensaje" role="status">Cargando usuarios...</p>
+
+    <p class="caja-ayuda">
+      Solo se muestran los usuarios del restaurante. Los usuarios no se
+      borran: se desactivan, así sus comandas y cobros quedan guardados.
+    </p>
+
+    <button type="button" id="btn-nuevo" class="boton boton--primario boton--bloque">+ Nuevo usuario</button>
+
+    <!-- =====================================================
+         FORMULARIO DE ALTA Y EDICIÓN (el mismo para los dos)
+         En edición: el usuario del login no se cambia (propuesta)
+         y la contraseña se cambia con su propio formulario.
+         ===================================================== -->
+    <form id="form-usuario" class="tarjeta usu-form" novalidate hidden>
+      <h2 id="titulo-form" class="caja-subtitulo">Nuevo usuario</h2>
+
+      <div class="campo">
+        <label for="usu-nombre">Nombre (el que se ve en pantalla)</label>
+        <input id="usu-nombre" type="text" maxlength="100" autocomplete="off" required>
+      </div>
+
+      <div class="campo">
+        <label for="usu-usuario">Usuario (para iniciar sesión)</label>
+        <!-- autocapitalize="none": el celular no pone la primera en mayúscula -->
+        <input id="usu-usuario" type="text" maxlength="50" autocomplete="off"
+               autocapitalize="none" spellcheck="false" required>
+        <small class="caja-ayuda">Letras, números, punto o guion, sin espacios. Ej.: mozo2</small>
+      </div>
+
+      <!-- Solo en el alta -->
+      <div id="campos-clave-alta">
+        <div class="campo">
+          <label for="usu-clave">Contraseña (mínimo 8)</label>
+          <!-- new-password: el navegador no autocompleta la del encargado -->
+          <input id="usu-clave" type="password" minlength="8" autocomplete="new-password">
+        </div>
+        <div class="campo">
+          <label for="usu-clave2">Repetir contraseña</label>
+          <input id="usu-clave2" type="password" minlength="8" autocomplete="new-password">
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="usu-rol">Rol</label>
+        <select id="usu-rol" required>
+          <option value="">Elegí un rol...</option>
+          <option value="mozo">Mozo</option>
+          <option value="cocina">Cocina</option>
+          <!-- Las recepcionistas también usan este rol (decidido 22/11) -->
+          <option value="encargado">Encargado (acceso total)</option>
+        </select>
+      </div>
+
+      <p id="error-usuario" class="mensaje mensaje--error" role="alert" hidden></p>
+
+      <div class="usu-botones">
+        <button type="submit" id="btn-guardar" class="boton boton--primario">Guardar</button>
+        <button type="button" id="btn-cancelar" class="boton boton--secundario">Cancelar</button>
+      </div>
+    </form>
+
+    <!-- =====================================================
+         FORMULARIO DE CAMBIO DE CONTRASEÑA
+         ===================================================== -->
+    <form id="form-clave" class="tarjeta usu-form" novalidate hidden>
+      <h2 class="caja-subtitulo">Cambiar contraseña</h2>
+      <!-- "De: Mozo 1 (mozo1)" -->
+      <p id="clave-para" class="caja-ayuda"></p>
+
+      <div class="campo">
+        <label for="nueva-clave">Nueva contraseña (mínimo 8)</label>
+        <input id="nueva-clave" type="password" minlength="8" autocomplete="new-password">
+      </div>
+      <div class="campo">
+        <label for="nueva-clave2">Repetir contraseña</label>
+        <input id="nueva-clave2" type="password" minlength="8" autocomplete="new-password">
+      </div>
+
+      <p id="error-clave" class="mensaje mensaje--error" role="alert" hidden></p>
+
+      <div class="usu-botones">
+        <button type="submit" id="btn-guardar-clave" class="boton boton--primario">Cambiar contraseña</button>
+        <button type="button" id="btn-cancelar-clave" class="boton boton--secundario">Cancelar</button>
+      </div>
+    </form>
+
+    <!-- =====================================================
+         LISTA DE USUARIOS (activos primero)
+         ===================================================== -->
+    <h2 class="caja-subtitulo">Usuarios del restaurante</h2>
+    <ul id="lista-usuarios" class="usu-lista" aria-label="Usuarios del restaurante"></ul>
+  </main>
+
+  <!-- =====================================================
+       PLANTILLA: usuarios.js la copia por cada usuario.
+       Así la estructura queda en el HTML y no armada a mano en JS.
+       ===================================================== -->
+  <template id="plantilla-usuario">
+    <li class="tarjeta usu-item">
+      <div class="usu-item__info">
+        <strong class="usu-item__nombre"></strong>
+        <!-- "mozo1 · Mozo" -->
+        <span class="usu-item__datos"></span>
+        <span class="usu-item__estado" hidden>Inactivo</span>
+        <span class="usu-item__aviso" hidden>También se usa en otro sistema (reservas o stock)</span>
+      </div>
+      <div class="usu-item__acciones">
+        <button type="button" class="boton boton--secundario" data-accion="editar">Editar</button>
+        <button type="button" class="boton boton--secundario" data-accion="clave">Contraseña</button>
+        <button type="button" class="boton boton--secundario" data-accion="activo">Desactivar</button>
+      </div>
+    </li>
+  </template>
+
+  <!-- El orden importa: api.js usa funciones de sesion.js, y
+       usuarios.js usa funciones de sesion.js y api.js -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/usuarios.js"></script>
+</body>
+</html>
