@@ -150,8 +150,11 @@ function iniciarPantalla() {
   // El ABM del menú es solo del encargado: a los demás no les mostramos el botón.
   // Ocultarlo es solo interfaz: igual menu.html usa exigirRol(['encargado'])
   // y el backend tiene que rechazar las rutas del menú para otros roles.
+  // Lo mismo con la Caja (Inc. 3): caja.html usa exigirRol(['encargado'])
+  // y las rutas /api/caja responden 403 a los otros roles.
   if (esEncargado) {
     document.getElementById('enlace-menu').hidden = false;
+    document.getElementById('enlace-caja').hidden = false;
   }
 
   // UN solo "escuchador" para toda la grilla (delegación de eventos)
@@ -839,7 +842,7 @@ async function abrirVistaCobro() {
     if (!mesaSeleccionada || mesaSeleccionada.id !== mesa.id || vistaCobro.hidden) return;
 
     if (!caja.abierto) {
-      mostrarErrorCobro('La caja está cerrada. Hay que abrir la caja antes de cobrar.');
+      mostrarErrorCobro('La caja está cerrada. Abrila desde el botón Caja (arriba) y volvé a cobrar.');
       return;
     }
     if (!cuenta) {

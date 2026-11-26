@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Caja · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Estilos de la caja (Inc. 3): resumen, movimientos, cierre -->
+  <link rel="stylesheet" href="../css/caja.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Caja</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+    <div class="encabezado__acciones">
+      <!-- Enlaces (<a>) y no botones porque llevan a otra página -->
+      <a href="mesas.html" class="boton boton--secundario">Mesas</a>
+      <button id="btn-salir" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Mensajes de la pantalla: "Cargando...", errores de conexión, avisos -->
+    <p id="mensaje" class="mensaje" role="status">Cargando caja...</p>
+
+    <!-- =====================================================
+         CAJA CERRADA: abrir un turno nuevo (RF-CAJ-01)
+         ===================================================== -->
+    <section id="vista-cerrada" hidden>
+      <div class="tarjeta caja-bloque">
+        <h2 class="caja-subtitulo">La caja está cerrada</h2>
+        <form id="form-abrir" novalidate>
+          <div class="campo">
+            <label for="input-saldo-inicial">Efectivo en el cajón al empezar el turno</label>
+            <input id="input-saldo-inicial" type="number" inputmode="decimal" min="0" step="0.01">
+          </div>
+          <!-- "El último cierre contó $ 11.000": ayuda a no equivocarse -->
+          <p id="sugerencia-saldo" class="caja-ayuda" hidden></p>
+          <p id="error-abrir" class="mensaje mensaje--error" role="alert" hidden></p>
+          <button type="submit" id="btn-abrir" class="boton boton--primario boton--bloque">Abrir caja</button>
+        </form>
+      </div>
+
+      <!-- Arqueo del último cierre (también aparece justo después de cerrar) -->
+      <div id="ultimo-cierre" class="tarjeta caja-bloque" hidden>
+        <h2 class="caja-subtitulo">Último cierre</h2>
+        <p id="ultimo-cierre-info" class="caja-ayuda"></p>
+        <!-- <dl> = lista de "nombre: valor". La llena caja.js -->
+        <dl id="ultimo-cierre-datos" class="caja-datos"></dl>
+      </div>
+    </section>
+
+    <!-- =====================================================
+         CAJA ABIERTA: resumen del turno y movimientos
+         ===================================================== -->
+    <section id="vista-abierta" hidden>
+      <!-- "Turno N° 3 · abierto el 26/11 14:00 por Encargado" -->
+      <p id="turno-info" class="caja-ayuda"></p>
+
+      <!-- Resumen (RF-CAJ-08): el efectivo va separado de las
+           transferencias porque es lo único que se cuenta al cerrar -->
+      <div class="caja-resumen">
+        <div class="tarjeta caja-cifra caja-cifra--destacada">
+          <span class="caja-cifra__titulo">Efectivo en caja</span>
+          <strong id="res-efectivo" class="caja-cifra__valor">$ 0</strong>
+          <span id="res-efectivo-detalle" class="caja-cifra__detalle"></span>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Transferencias</span>
+          <strong id="res-transferencias" class="caja-cifra__valor">$ 0</strong>
+          <span class="caja-cifra__detalle">No están en el cajón</span>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Saldo total</span>
+          <strong id="res-saldo" class="caja-cifra__valor">$ 0</strong>
+          <span class="caja-cifra__detalle">Efectivo + transferencias</span>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Mesas cobradas</span>
+          <strong id="res-cobros" class="caja-cifra__valor">0</strong>
+          <span id="res-sin-cargo" class="caja-cifra__detalle"></span>
+        </div>
+      </div>
+
+      <div class="caja-acciones">
+        <button type="button" id="btn-movimiento" class="boton boton--secundario">Registrar movimiento</button>
+        <button type="button" id="btn-cerrar-caja" class="boton boton--peligro">Cerrar caja</button>
+      </div>
+
+      <!-- Movimientos del turno (RF-CAJ-06): las mismas columnas
+           que la planilla de caja de la hostería -->
+      <h2 class="caja-subtitulo">Movimientos del turno</h2>
+      <p id="sin-movimientos" class="mensaje" hidden>Todavía no hay movimientos en este turno.</p>
+      <!-- La tabla es ancha: en el celular se desliza de costado
+           (tabindex para poder moverla también con el teclado) -->
+      <div class="caja-tabla-contenedor" tabindex="0" aria-label="Movimientos del turno">
+        <table class="caja-tabla">
+          <thead>
+            <tr>
+              <th scope="col">Hora</th>
+              <th scope="col">Código</th>
+              <th scope="col">Concepto</th>
+              <th scope="col">Forma</th>
+              <th scope="col" class="caja-num">Ingreso</th>
+              <th scope="col" class="caja-num">Egreso</th>
+              <th scope="col" class="caja-num">Saldo</th>
+              <th scope="col">Usuario</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-movimientos"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- =====================================================
+       PANEL: MOVIMIENTO MANUAL (RF-CAJ-07)
+       Gastos, pagos a proveedores, ajustes. Si suma o resta
+       lo decide el TIPO del código (lo controla la base).
+       ===================================================== -->
+  <div id="panel-movimiento" class="panel-fondo" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-labelledby="titulo-movimiento">
+      <h2 id="titulo-movimiento" class="panel__titulo">Registrar movimiento</h2>
+      <form id="form-movimiento" novalidate>
+        <div class="campo">
+          <label for="mov-codigo">Código</label>
+          <!-- Lo llena caja.js con los códigos de la base -->
+          <select id="mov-codigo"></select>
+        </div>
+        <!-- "Este código RESTA de la caja" / "SUMA a la caja" -->
+        <p id="mov-tipo" class="caja-ayuda"></p>
+
+        <div class="campo">
+          <label for="mov-forma">Forma</label>
+          <select id="mov-forma">
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+          </select>
+        </div>
+        <div id="mov-campo-medio" class="campo" hidden>
+          <label for="mov-medio">Medio de la transferencia</label>
+          <select id="mov-medio">
+            <option value="">Elegí el medio</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="mov-importe">Importe</label>
+          <input id="mov-importe" type="number" inputmode="decimal" min="0" step="0.01">
+        </div>
+        <div class="campo">
+          <label for="mov-concepto">Concepto</label>
+          <input id="mov-concepto" type="text" maxlength="100" placeholder="Ej.: compra de pan">
+        </div>
+
+        <!-- Datos del comprobante: opcionales, como en el Excel -->
+        <details class="caja-detalles">
+          <summary>Comprobante y proveedor (opcional)</summary>
+          <div class="campo">
+            <label for="mov-tipo-comprobante">Tipo de comprobante</label>
+            <input id="mov-tipo-comprobante" type="text" maxlength="30" placeholder="Ej.: Factura C, Ticket">
+          </div>
+          <div class="campo">
+            <label for="mov-nro-comprobante">N° de comprobante</label>
+            <input id="mov-nro-comprobante" type="text" maxlength="50">
+          </div>
+          <div class="campo">
+            <label for="mov-dni-cuit">DNI / CUIT</label>
+            <input id="mov-dni-cuit" type="text" inputmode="numeric" maxlength="20">
+          </div>
+          <div class="campo">
+            <label for="mov-proveedor">Huésped / proveedor</label>
+            <input id="mov-proveedor" type="text" maxlength="150">
+          </div>
+          <div class="campo">
+            <label for="mov-detalle">Detalle</label>
+            <textarea id="mov-detalle" rows="2" maxlength="255"></textarea>
+          </div>
+        </details>
+
+        <p id="error-movimiento" class="mensaje mensaje--error" role="alert" hidden></p>
+        <div class="panel__acciones">
+          <button type="button" class="boton boton--secundario" data-cerrar>Cancelar</button>
+          <button type="submit" id="btn-guardar-movimiento" class="boton boton--primario">Guardar</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- =====================================================
+       PANEL: CIERRE CON ARQUEO (RF-CAJ-09)
+       Se cuenta SOLO el efectivo del cajón. Las transferencias
+       se informan aparte (no están en el cajón).
+       ===================================================== -->
+  <div id="panel-cierre" class="panel-fondo" hidden>
+    <section class="panel" role="dialog" aria-modal="true" aria-labelledby="titulo-cierre">
+      <h2 id="titulo-cierre" class="panel__titulo">Cerrar caja</h2>
+      <form id="form-cierre" novalidate>
+        <dl class="caja-datos">
+          <dt>Efectivo que tiene que haber</dt>
+          <dd id="cierre-esperado">$ 0</dd>
+          <dt>Transferencias del turno (no se cuentan)</dt>
+          <dd id="cierre-transferencias">$ 0</dd>
+        </dl>
+
+        <div class="campo">
+          <label for="input-contado">Efectivo contado en el cajón</label>
+          <input id="input-contado" type="number" inputmode="decimal" min="0" step="0.01">
+        </div>
+        <!-- "Diferencia: falta $ 500" / "✔ Coincide" (mientras escribe) -->
+        <p id="cierre-diferencia" class="cobro-resto" aria-live="polite"></p>
+
+        <div class="campo">
+          <label for="input-observaciones">Observaciones <span id="obs-obligatorias">(opcional)</span></label>
+          <textarea id="input-observaciones" rows="2" maxlength="1000"
+                    placeholder="Ej.: faltan $ 500, se pagó un flete sin comprobante"></textarea>
+        </div>
+
+        <p id="error-cierre" class="mensaje mensaje--error" role="alert" hidden></p>
+        <div class="panel__acciones">
+          <button type="button" class="boton boton--secundario" data-cerrar>Cancelar</button>
+          <button type="submit" id="btn-confirmar-cierre" class="boton boton--peligro">Cerrar caja</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- El orden importa: api.js usa funciones de sesion.js,
+       y caja.js usa funciones de sesion.js, api.js y formato.js -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/caja.js"></script>
+</body>
+</html>
