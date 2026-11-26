@@ -151,18 +151,27 @@ exports.codigosCaja = async (req, res) => {
 // APERTURA, CIERRE Y REAPERTURA
 // ------------------------------------------------------------
 
-// POST /api/caja/turnos/apertura   body: { saldo_inicial }
+// Turnos de caja (RF-CAJ-10, a confirmar con la hostería).
+// Sin Ñ a propósito: la pantalla muestra "Mañana".
+const TURNOS = ["MANANA", "TARDE", "NOCHE"];
+
+// POST /api/caja/turnos/apertura   body: { saldo_inicial, turno }
+// Usa sp_caja_abrir_turno (99b): igual que antes + el turno elegido.
 exports.abrirCaja = async (req, res) => {
   const saldo = importeValido(req.body?.saldo_inicial ?? 0, "Saldo inicial");
+  const turno = String(req.body?.turno ?? "").trim().toUpperCase();
+  if (!TURNOS.includes(turno)) {
+    throw new HttpError(400, "Elegí el turno: mañana, tarde o noche.");
+  }
 
-  const r = await callProcedure("sp_caja_abrir", [req.user.id_usuario, saldo]);
+  const r = await callProcedure("sp_caja_abrir_turno", [req.user.id_usuario, saldo, turno]);
 
   await auditarSinFallar(
     req.user.id_usuario,
     "ABRIR",
     "rest_turno_caja",
     r[0].id_turno_caja,
-    { saldo_inicial: saldo }
+    { saldo_inicial: saldo, turno }
   );
 
   res.status(201).json(r[0]);

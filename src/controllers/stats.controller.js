@@ -126,3 +126,14 @@ exports.ingresos = async (req, res) => {
   const r = await callProcedure("sp_est_ingresos", [desde, hasta, agrupar]);
   res.json(r);
 };
+// GET /api/estadisticas/mozos?desde=2026-11-23&hasta=2026-11-29
+// Ventas por mozo y comensales (RF-EST-05). Una fila por mozo:
+// { id_usuario, mozo, mesas_cobradas, comensales, total_vendido,
+//   cantidad_sin_cargo, valor_sin_cargo }
+// Mismas reglas que el resto: solo mesas COBRADAS, por la fecha del
+// cobro. Los promedios los calcula la pantalla.
+exports.ventasMozos = async (req, res) => {
+  const { desde, hasta } = periodoValido(req.query);
+  const r = await callProcedure("sp_est_mozos", [desde, hasta]);
+  res.json(r);
+};

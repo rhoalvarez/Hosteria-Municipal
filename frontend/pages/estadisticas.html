@@ -166,6 +166,32 @@
 
       <button type="button" id="btn-csv-platos" class="boton boton--secundario">Exportar platos (CSV)</button>
     </section>
+
+    <!-- =====================================================
+         VENTAS POR MOZO Y COMENSALES (RF-EST-05)
+         El mozo es el de la comanda (el que abrió la mesa).
+         ===================================================== -->
+    <section id="sec-mozos" class="est-seccion" hidden>
+      <h2 class="caja-subtitulo">Ventas por mozo</h2>
+      <p id="sin-mozos" class="mensaje" hidden>No hubo mesas cobradas en este período.</p>
+      <div id="contenedor-mozos" class="caja-tabla-contenedor" tabindex="0" aria-label="Ventas por mozo">
+        <table class="caja-tabla">
+          <thead>
+            <tr>
+              <th scope="col">Mozo</th>
+              <th scope="col" class="caja-num">Mesas cobradas</th>
+              <th scope="col" class="caja-num">Comensales</th>
+              <th scope="col" class="caja-num">Total vendido</th>
+              <th scope="col" class="caja-num">Promedio por mesa</th>
+              <th scope="col" class="caja-num">Promedio por persona</th>
+              <th scope="col" class="caja-num">Sin cargo</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-mozos"></tbody>
+        </table>
+      </div>
+      <button type="button" id="btn-csv-mozos" class="boton boton--secundario">Exportar mozos (CSV)</button>
+    </section>
   </main>
 
   <!-- =====================================================

@@ -25,4 +25,8 @@ router.get("/platos", asyncHandler(c.rankingPlatos));
 // ?desde=AAAA-MM-DD&hasta=AAAA-MM-DD&agrupar=SEMANA|MES
 router.get("/ingresos", asyncHandler(c.ingresos));
 
+// Ventas por mozo y comensales (RF-EST-05)
+// ?desde=AAAA-MM-DD&hasta=AAAA-MM-DD
+router.get("/mozos", asyncHandler(c.ventasMozos));
+
 module.exports = router;
