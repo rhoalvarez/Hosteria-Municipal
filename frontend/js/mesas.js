@@ -13,6 +13,8 @@
      - ocupada o cuenta pedida + ENCARGADO → botón "Cobrar" (Inc. 3):
        formas de pago (pago dividido) o sin cargo. Al cobrar, la
        comanda se cierra y la mesa queda libre.
+     - ocupada o cuenta pedida + ENCARGADO → botón "Anular" en cada
+       plato ya enviado (RF-PED-06): motivo obligatorio y dos toques.
    Los datos SIEMPRE se piden a api.js, nunca con fetch directo.
    ========================================================= */
 
@@ -118,6 +120,10 @@ let cuentaCobro = null;        // { id_comanda, numero, total, ... } de obtenerC
 let cobrando = false;          // true mientras se manda el cobro (evita doble cobro)
 let confirmandoCobro = false;  // true después del primer toque en "Cobrar"
 
+// Estado de la anulación de un plato (RF-PED-06) — solo el encargado
+let anulando = false;           // true mientras se manda la anulación (evita doble toque)
+let confirmandoAnular = false;  // true después del primer toque en "Confirmar anulación"
+
 // Actualización automática
 let temporizador = null;    // el setTimeout de la próxima actualización
 let actualizando = false;   // true mientras hay una petición en curso
@@ -166,6 +172,12 @@ function iniciarPantalla() {
   formPersonas.addEventListener('submit', tomarPedido);
   btnAgregar.addEventListener('click', agregarPedido);
   btnPedirCuenta.addEventListener('click', pedirCuenta);
+
+  // Anular un plato (RF-PED-06): los botones "Anular" se crean y se
+  // borran cada vez que se dibujan los pedidos, así que usamos
+  // delegación: UN escuchador en la lista para todos.
+  listaPedidos.addEventListener('click', alTocarListaPedidos);
+  listaPedidos.addEventListener('input', alEscribirMotivoAnular);
 
   // Cobro (Inc. 3)
   btnCobrar.addEventListener('click', abrirVistaCobro);
@@ -400,7 +412,8 @@ function cerrarPanel() {
   // así el mozo siempre ve cómo terminó
   // Lo mismo mientras se está cobrando: que no quede la duda
   // de si el cobro se hizo o no
-  if (resolviendoQr || cobrando) return;
+  // Y mientras se está anulando un plato, por lo mismo
+  if (resolviendoQr || cobrando || anulando) return;
 
   panelFondo.hidden = true;
   vistaLibre.hidden = true;
@@ -410,6 +423,7 @@ function cerrarPanel() {
   mesaSeleccionada = null;
   pedidoQrAbierto = null;
   cuentaCobro = null;
+  confirmandoAnular = false;
   reiniciarBotonCuenta();
   reiniciarBotonDescartar();
   reiniciarBotonCobro();
@@ -487,14 +501,24 @@ async function abrirVistaOcupada(mesa) {
 
 /* Dibuja los pedidos de la mesa y calcula el total.
    El total se calcula con precio_unitario, que es el precio
-   GUARDADO en el pedido (el del momento en que se pidió). */
+   GUARDADO en el pedido (el del momento en que se pidió).
+   Los platos anulados NO llegan (sp_mesa_pedidos filtra anulado = 0),
+   así que el total coincide con rest_comanda.total, que es con el
+   que se cobra. */
 function dibujarPedidos(pedidos) {
   listaPedidos.textContent = '';
+  confirmandoAnular = false;
 
-  if (pedidos.length === 0) {
+  // Un pedido al que se le anularon TODOS los platos llega sin ítems:
+  // no lo mostramos (sería una tarjeta vacía).
+  const visibles = pedidos.filter(p => p.items.length > 0);
+
+  if (visibles.length === 0) {
     const vacio = document.createElement('li');
     vacio.className = 'mensaje';
-    vacio.textContent = 'Todavía no hay pedidos en esta mesa.';
+    vacio.textContent = pedidos.length === 0
+      ? 'Todavía no hay pedidos en esta mesa.'
+      : 'No quedan platos en esta mesa (se anularon todos).';
     listaPedidos.append(vacio);
     totalMesa.textContent = formatoPesos(0);
     return;
@@ -502,7 +526,7 @@ function dibujarPedidos(pedidos) {
 
   let total = 0;
 
-  for (const pedido of pedidos) {
+  for (const pedido of visibles) {
     const li = document.createElement('li');
     li.className = 'pedido';
 
@@ -529,14 +553,34 @@ function dibujarPedidos(pedidos) {
       total += subtotal;
 
       const liItem = document.createElement('li');
-      liItem.textContent = item.cantidad + ' × ' + item.nombre +
+      liItem.className = 'item-mesa';
+
+      const texto = document.createElement('span');
+      texto.className = 'item-mesa__texto';
+      texto.textContent = item.cantidad + ' × ' + item.nombre +
         ' — ' + formatoPesos(subtotal);
 
       if (item.observaciones) {
         const obs = document.createElement('span');
         obs.className = 'pedido__obs';
         obs.textContent = item.observaciones;
-        liItem.append(obs);
+        texto.append(obs);
+      }
+      liItem.append(texto);
+
+      // "Anular": solo el encargado, y solo si sabemos qué renglón es.
+      // Ocultarlo es solo interfaz: el backend responde 403 a otros roles.
+      if (esEncargado && item.id_pedido_item) {
+        const descripcion = item.cantidad + ' × ' + item.nombre;
+        const botonAnular = document.createElement('button');
+        botonAnular.type = 'button';
+        botonAnular.className = 'boton boton--secundario item-mesa__anular';
+        botonAnular.textContent = 'Anular';
+        botonAnular.setAttribute('aria-label', 'Anular ' + descripcion);
+        // Guardamos en el botón qué renglón es y cómo se llama
+        botonAnular.dataset.id = item.id_pedido_item;
+        botonAnular.dataset.descripcion = descripcion;
+        liItem.append(botonAnular);
       }
 
       ul.append(liItem);
@@ -588,6 +632,195 @@ function reiniciarBotonCuenta() {
   confirmandoCuenta = false;
   btnPedirCuenta.disabled = false;
   btnPedirCuenta.textContent = 'Pedir cuenta';
+}
+
+/* =========================================================
+   ANULAR UN PLATO YA ENVIADO (RF-PED-06) — solo el encargado
+   ---------------------------------------------------------
+   1. "Anular" en un plato → debajo aparece el motivo con
+      "Cancelar" y "Confirmar anulación". Uno solo abierto a la vez.
+   2. "Confirmar anulación" en dos toques (como "Pedir cuenta"):
+      el primer toque revisa el motivo, el segundo anula.
+   3. La base (sp_item_anular) marca el plato, recalcula el total
+      de la comanda y guarda la auditoría, todo junto.
+   4. Se vuelven a traer los pedidos: el plato desaparece y el
+      total baja. Cocina deja de verlo sola en su próxima
+      actualización.
+   El formulario se arma con createElement (no innerHTML), igual
+   que el resto de la pantalla.
+   LARGO_MIN_MOTIVO_ANULAR y LARGO_MAX_MOTIVO_ANULAR están en api.js:
+   son las mismas reglas que usa anularItem.
+   ========================================================= */
+
+// Un solo escuchador para todos los botones de la lista (delegación)
+function alTocarListaPedidos(evento) {
+  const botonAnular = evento.target.closest('.item-mesa__anular');
+  if (botonAnular) {
+    abrirFormAnular(botonAnular);
+    return;
+  }
+  if (evento.target.closest('.anular__cancelar')) {
+    cerrarFormAnular();
+    return;
+  }
+  const botonConfirmar = evento.target.closest('.anular__confirmar');
+  if (botonConfirmar) {
+    confirmarAnulacion(botonConfirmar.closest('.anular'));
+  }
+}
+
+// Arma el formulario del motivo debajo del plato
+function abrirFormAnular(botonAnular) {
+  if (anulando) return;
+  cerrarFormAnular(); // si había otro abierto, lo cerramos
+
+  const liItem = botonAnular.closest('.item-mesa');
+
+  const form = document.createElement('div');
+  form.className = 'anular';
+  form.dataset.id = botonAnular.dataset.id;
+  form.dataset.descripcion = botonAnular.dataset.descripcion;
+
+  const campo = document.createElement('div');
+  campo.className = 'campo';
+
+  const etiqueta = document.createElement('label');
+  etiqueta.htmlFor = 'input-motivo-anular';
+  etiqueta.textContent = 'Motivo para anular ' + botonAnular.dataset.descripcion;
+
+  const motivo = document.createElement('textarea');
+  motivo.id = 'input-motivo-anular';
+  motivo.className = 'anular__motivo';
+  motivo.rows = 2;
+  motivo.maxLength = LARGO_MAX_MOTIVO_ANULAR;
+  motivo.placeholder = 'Ej.: el cliente no lo quiso / se cargó por error';
+
+  campo.append(etiqueta, motivo);
+
+  const error = document.createElement('p');
+  error.className = 'mensaje mensaje--error anular__error';
+  error.setAttribute('role', 'alert');
+  error.hidden = true;
+
+  const acciones = document.createElement('div');
+  acciones.className = 'panel__acciones';
+
+  const cancelar = document.createElement('button');
+  cancelar.type = 'button';
+  cancelar.className = 'boton boton--secundario anular__cancelar';
+  cancelar.textContent = 'Cancelar';
+
+  const confirmar = document.createElement('button');
+  confirmar.type = 'button';
+  confirmar.className = 'boton boton--peligro anular__confirmar';
+  confirmar.textContent = 'Confirmar anulación';
+
+  acciones.append(cancelar, confirmar);
+  form.append(campo, error, acciones);
+  liItem.append(form);
+
+  botonAnular.hidden = true; // mientras está abierto, no hace falta
+  confirmandoAnular = false;
+  motivo.focus();
+}
+
+// Cierra el formulario abierto (si hay) y vuelve a mostrar su "Anular"
+function cerrarFormAnular() {
+  if (anulando) return;
+  const abierto = listaPedidos.querySelector('.anular');
+  if (!abierto) return;
+
+  const liItem = abierto.closest('.item-mesa');
+  abierto.remove();
+  const botonAnular = liItem ? liItem.querySelector('.item-mesa__anular') : null;
+  if (botonAnular) botonAnular.hidden = false;
+  confirmandoAnular = false;
+}
+
+// Si cambia el motivo, hay que volver a confirmar
+function alEscribirMotivoAnular(evento) {
+  if (evento.target.classList.contains('anular__motivo')) {
+    reiniciarBotonAnular(evento.target.closest('.anular'));
+  }
+}
+
+// Deja el botón "Confirmar anulación" como al principio
+function reiniciarBotonAnular(form) {
+  confirmandoAnular = false;
+  if (!form) return;
+  const boton = form.querySelector('.anular__confirmar');
+  boton.disabled = false;
+  boton.textContent = 'Confirmar anulación';
+}
+
+async function confirmarAnulacion(form) {
+  if (anulando || !form || !mesaSeleccionada) return;
+
+  const motivo = form.querySelector('.anular__motivo').value.trim();
+  const error = form.querySelector('.anular__error');
+  const botonConfirmar = form.querySelector('.anular__confirmar');
+  const botonCancelar = form.querySelector('.anular__cancelar');
+  const descripcion = form.dataset.descripcion;
+
+  // Primer toque: revisamos el motivo y pedimos confirmación
+  if (!confirmandoAnular) {
+    if (motivo.length < LARGO_MIN_MOTIVO_ANULAR) {
+      error.textContent = 'Escribí el motivo (mínimo ' + LARGO_MIN_MOTIVO_ANULAR + ' letras).';
+      error.hidden = false;
+      form.querySelector('.anular__motivo').focus();
+      return;
+    }
+    error.hidden = true;
+    confirmandoAnular = true;
+    botonConfirmar.textContent = '¿Anular ' + descripcion + '? Tocá de nuevo';
+    return;
+  }
+
+  // Segundo toque: se anula. Bloqueamos los botones (doble toque).
+  const mesa = mesaSeleccionada;
+  anulando = true;
+  botonConfirmar.disabled = true;
+  botonCancelar.disabled = true;
+  botonConfirmar.textContent = 'Anulando…';
+
+  try {
+    const r = await anularItem(Number(form.dataset.id), motivo);
+    anulando = false;
+    confirmandoAnular = false;
+
+    // Si mientras tanto cerró el panel o tocó otra mesa, no redibujamos
+    if (!mesaSeleccionada || mesaSeleccionada.id !== mesa.id) return;
+
+    // Volvemos a traer los pedidos: el plato ya no viene y el total baja
+    await abrirVistaOcupada(mesa);
+    mostrarAvisoOcupada('Anulado: ' + descripcion + ' ✔ · Total nuevo: ' + formatoPesos(r.total));
+    actualizar();
+  } catch (e) {
+    anulando = false;
+    confirmandoAnular = false;
+
+    if (e.estado === 401) {
+      manejarError(e, mostrarErrorOcupada);
+      return;
+    }
+
+    // 404 / 409: otro encargado ya lo anuló, o la mesa se cobró.
+    // Mostramos cómo está la mesa AHORA, con el mensaje del servidor.
+    if (e.estado === 404 || e.estado === 409) {
+      if (mesaSeleccionada && mesaSeleccionada.id === mesa.id) {
+        await abrirVistaOcupada(mesa);
+        mostrarErrorOcupada(e.message);
+      }
+      actualizar();
+      return;
+    }
+
+    // Otro error (motivo, sin conexión): queda abierto para reintentar
+    botonCancelar.disabled = false;
+    reiniciarBotonAnular(form);
+    error.textContent = e.message;
+    error.hidden = false;
+  }
 }
 
 /* =========================================================
@@ -1120,6 +1353,15 @@ function ocultarMensaje() {
 
 function mostrarErrorOcupada(texto) {
   errorOcupada.textContent = texto;
+  errorOcupada.className = 'mensaje mensaje--error';
+  errorOcupada.hidden = false;
+}
+
+// Mensaje informativo en el panel de la mesa (no es error):
+// "Anulado: 1 × Vino tinto (copa) ✔". Usa el mismo lugar que el error.
+function mostrarAvisoOcupada(texto) {
+  errorOcupada.textContent = texto;
+  errorOcupada.className = 'mensaje';
   errorOcupada.hidden = false;
 }
 

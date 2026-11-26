@@ -79,6 +79,15 @@ router.patch(
   asyncHandler(c.estadoPedido)
 );
 
+// Anular un ítem ya enviado a cocina (RF-PED-06)
+// Solo el encargado. :id es el id_pedido_item (un renglón del pedido).
+// Body: { "motivo": "..." } (mínimo 5 letras).
+router.patch(
+  "/pedidos-items/:id/anular",
+  roles("ENCARGADO"),
+  asyncHandler(c.anularItem)
+);
+
 // =====================================================
 // PEDIDOS QR PARA EL MOZO
 // Rutas solicitadas por Luján.
