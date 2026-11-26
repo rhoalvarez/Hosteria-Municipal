@@ -5,7 +5,8 @@
    - mesas.html: la vista de COBRO dentro del panel de la mesa
                  (formas de pago, sin cargo)
    - caja.html:  abrir caja, resumen del turno, movimientos,
-                 movimiento manual y cierre con arqueo
+                 movimiento manual, cierre con arqueo,
+                 historial de turnos y reapertura
    Se carga DESPUÉS de estilos.css: reusa sus clases (panel,
    campo, boton, mensaje...) y acá agrega solo lo nuevo.
    Así no tocamos estilos.css, que ya está probado.
@@ -149,8 +150,11 @@
 /* Lo oculto se mantiene oculto aunque tenga un display arriba */
 #vista-cerrada [hidden],
 #vista-abierta [hidden],
+#seccion-historial [hidden],
 #panel-movimiento [hidden],
-#panel-cierre [hidden] {
+#panel-cierre [hidden],
+#panel-reapertura [hidden],
+#panel-turno [hidden] {
   display: none !important;
 }
 
@@ -190,10 +194,14 @@
   text-align: right;
 }
 
-/* La diferencia del arqueo, con texto Y color */
+/* La diferencia del arqueo, con texto Y color.
+   Sirve en la lista del arqueo (dd) y en la tabla del historial (td). */
 .caja-datos dd.caja-dif--falta,
-.caja-datos dd.caja-dif--sobra { color: var(--color-error, #a12800); }
-.caja-datos dd.caja-dif--ok    { color: var(--color-exito, #55692f); }
+.caja-datos dd.caja-dif--sobra,
+.caja-tabla td.caja-dif--falta,
+.caja-tabla td.caja-dif--sobra { color: var(--color-error, #a12800); }
+.caja-datos dd.caja-dif--ok,
+.caja-tabla td.caja-dif--ok    { color: var(--color-exito, #55692f); }
 
 /* ---------- Resumen del turno: 4 tarjetas ---------- */
 /* Celular: 2 columnas. PC: 4 columnas (ver más abajo) */
@@ -311,6 +319,74 @@
 
 .caja-detalles[open] summary {
   margin-bottom: 8px;
+}
+
+/* =========================================================
+   HISTORIAL DE TURNOS Y REAPERTURA (RF-CAJ-11)
+   ========================================================= */
+
+/* Separación del resto de la pantalla */
+.caja-historial {
+  margin-top: calc(var(--espacio, 16px) * 2);
+  padding-top: var(--espacio, 16px);
+  border-top: 1px solid var(--color-borde, #d5dae1);
+}
+
+/* Título a la izquierda y botón a la derecha.
+   En el celular, si no entran, el botón baja (flex-wrap). */
+.caja-historial__encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.caja-historial__encabezado .caja-subtitulo {
+  margin: 0;
+}
+
+/* Estado del turno en la tabla: "Abierto" resaltado,
+   porque es el turno en el que se está cobrando ahora */
+.caja-estado--abierto {
+  font-weight: 600;
+  color: var(--color-primario, #3d6570);
+}
+
+/* Texto que NO se ve pero que lee el lector de pantalla
+   (el título de la columna del botón "Ver") */
+.caja-solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/* Aviso amarillo del panel de reapertura: reabrir cambia un
+   cierre que ya estaba hecho, así que lo destacamos */
+.caja-advertencia {
+  margin: 0 0 var(--espacio, 16px);
+  padding: 10px 12px;
+  background: #fff6db;
+  border-left: 4px solid #c99a1a;
+  border-radius: var(--radio, 10px);
+}
+
+/* Botón "Reabrir este turno": un poco separado del arqueo */
+#btn-reabrir {
+  margin-top: 4px;
+}
+
+/* Panel del detalle del turno: más ancho que los demás porque
+   tiene una tabla. Si el contenido es largo, se desliza adentro
+   del panel (no se sale de la pantalla). */
+.panel--ancho {
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 /* ---------- Tablet y PC ---------- */
