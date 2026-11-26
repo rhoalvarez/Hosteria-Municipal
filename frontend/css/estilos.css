@@ -1148,3 +1148,64 @@ a.boton {
     grid-template-columns: 1fr 1fr;
   }
 }
+/* =========================================================
+   PANEL DE LA MESA: platos con el botón "Anular" (RF-PED-06)
+   Cada plato es una fila: el texto a la izquierda y el botón
+   chico a la derecha. Si no entra (celular angosto), el botón
+   baja solo (flex-wrap). El formulario del motivo ocupa toda
+   la fila de abajo.
+   Solo dentro de #lista-pedidos: la lista del pedido QR
+   (#lista-qr) usa las mismas clases y no se toca.
+   ========================================================= */
+
+/* Sin viñetas: las filas ya se separan con una línea */
+#lista-pedidos .pedido__items {
+  list-style: none;
+  padding-left: 0;
+}
+
+.item-mesa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--color-borde, #d5dae1);
+}
+
+.item-mesa:last-child {
+  border-bottom: none;
+}
+
+/* El texto toma todo el lugar que puede; min-width: 0 deja que
+   un nombre largo baje de renglón en vez de empujar el botón */
+.item-mesa__texto {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* Botón chico, en rojo (es una acción que borra) pero sin fondo:
+   así no compite con "Agregar pedido" o "Cobrar" */
+.item-mesa__anular {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  color: var(--color-error, #a12800);
+  border-color: var(--color-error, #a12800);
+}
+
+/* Formulario del motivo: debajo del plato, a todo el ancho */
+.item-mesa .anular {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #fbf3f0;
+  border-left: 4px solid var(--color-error, #a12800);
+  border-radius: var(--radio, 10px);
+}
+
+.item-mesa .anular .panel__acciones {
+  margin-top: 8px;
+}
