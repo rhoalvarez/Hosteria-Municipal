@@ -411,3 +411,72 @@ exports.crearMesa = async (req, res) => {
 
   res.status(201).json(result);
 };
+// ==========================================
+// AUMENTO DE PRECIOS POR PORCENTAJE
+// ==========================================
+// Los precios cambian cada 6 meses aprox. (relevamiento): en vez de
+// editar plato por plato, se sube un % a todos o a una categoría.
+// La fórmula y la transacción están en 99_aumento_precios.sql
+// (fn_precio_aumentado): la vista previa y el aplicar usan la MISMA,
+// así lo que el encargado ve es exactamente lo que se guarda.
+
+const REDONDEOS = [1, 10, 50, 100];
+
+// Lee y valida porcentaje, categoría y redondeo (de la URL o del body)
+function datosAumento(origen) {
+  const porcentaje = Number(origen.porcentaje);
+  if (
+    !Number.isFinite(porcentaje) ||
+    porcentaje <= 0 ||
+    porcentaje > 100 ||
+    Math.round(porcentaje * 100) !== porcentaje * 100
+  ) {
+    throw new HttpError(
+      400,
+      "El porcentaje tiene que ser mayor que 0 y como máximo 100 (hasta 2 decimales)."
+    );
+  }
+
+  // 0 = todas las categorías
+  const categoria = Number(origen.categoria ?? 0);
+  if (!Number.isInteger(categoria) || categoria < 0) {
+    throw new HttpError(400, "Categoría inválida.");
+  }
+
+  const redondeo = Number(origen.redondeo ?? 1);
+  if (!REDONDEOS.includes(redondeo)) {
+    throw new HttpError(400, "El redondeo tiene que ser 1, 10, 50 o 100.");
+  }
+
+  return { porcentaje, categoria, redondeo };
+}
+
+// GET /api/menu/aumento?porcentaje=15&categoria=0&redondeo=100
+// Vista previa: precio actual y nuevo de cada plato. NO cambia nada.
+exports.vistaAumento = async (req, res) => {
+  const d = datosAumento(req.query);
+  res.json(
+    await callProcedure("sp_menu_aumento_vista", [d.porcentaje, d.categoria, d.redondeo])
+  );
+};
+
+// POST /api/menu/aumento   body: { porcentaje, categoria, redondeo }
+// Aplica el aumento en una sola transacción (y queda en la auditoría).
+exports.aplicarAumento = async (req, res) => {
+  const d = datosAumento(req.body || {});
+  const result = (
+    await callProcedure("sp_menu_aumento_aplicar", [
+      d.porcentaje,
+      d.categoria,
+      d.redondeo,
+      req.user.id_usuario,
+    ])
+  )[0];
+
+  res.json({
+    platos_actualizados: Number(result.platos_actualizados),
+    porcentaje: d.porcentaje,
+    categoria: d.categoria,
+    redondeo: d.redondeo,
+  });
+};

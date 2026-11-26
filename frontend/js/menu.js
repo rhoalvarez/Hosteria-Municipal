@@ -6,6 +6,8 @@
    - Marcar agotado / disponible
    - Baja lógica, con confirmación en dos toques
    - Ver los dados de baja y reactivarlos
+   - Aumentar precios por % (todos o una categoría), con vista
+     previa y confirmación en dos toques
 
    Después de cada cambio volvemos a pedir la lista al servidor:
    la que manda es la base de datos, no lo que muestra la pantalla.
@@ -32,6 +34,11 @@ let platoAvisoId = null;        // plato del botón "Editar precio" del aviso
 
 const TIEMPO_CONFIRMAR = 4000;  // ms: después se cancela solo el primer toque de la baja
 
+// Aumento de precios por %
+let vistaAumentoDatos = null;   // { porcentaje, categoria, redondeo } de la vista previa mostrada
+let confirmandoAumento = false; // true después del primer toque en "Aplicar aumento"
+let aplicandoAumento = false;   // bloquea el doble toque mientras se guarda
+
 // ---------- Elementos de la página ----------
 const nombreUsuario = document.getElementById('nombre-usuario');
 const btnSalir = document.getElementById('btn-salir');
@@ -50,6 +57,21 @@ const panelTitulo = document.getElementById('panel-titulo');
 const form = document.getElementById('form-plato');
 const errorForm = document.getElementById('error-form');
 const btnGuardar = document.getElementById('btn-guardar');
+
+// Panel del aumento de precios
+const btnAumento = document.getElementById('btn-aumento');
+const panelAumento = document.getElementById('panel-aumento');
+const formAumento = document.getElementById('form-aumento');
+const aumentoPorcentaje = document.getElementById('aumento-porcentaje');
+const aumentoCategoria = document.getElementById('aumento-categoria');
+const aumentoRedondeo = document.getElementById('aumento-redondeo');
+const errorAumento = document.getElementById('error-aumento');
+const btnVistaAumento = document.getElementById('btn-vista-aumento');
+const vistaAumento = document.getElementById('vista-aumento');
+const resumenAumento = document.getElementById('resumen-aumento');
+const tablaAumento = document.getElementById('tabla-aumento');
+const btnCancelarAumento = document.getElementById('btn-cancelar-aumento');
+const btnAplicarAumento = document.getElementById('btn-aplicar-aumento');
 
 // Cada campo del formulario con su mensaje de error
 const campos = {
@@ -89,6 +111,20 @@ function iniciar() {
   lista.addEventListener('click', alTocarLista);
 
   form.addEventListener('submit', guardar);
+
+  // Aumento de precios por %
+  btnAumento.addEventListener('click', abrirAumento);
+  formAumento.addEventListener('submit', verVistaAumento);
+  btnAplicarAumento.addEventListener('click', aplicarAumento);
+  btnCancelarAumento.addEventListener('click', cerrarAumento);
+  panelAumento.addEventListener('click', (evento) => {
+    if (evento.target === panelAumento) cerrarAumento();
+  });
+  // Si cambia algún dato, la vista previa ya no vale: hay que volver a verla
+  for (const campo of [aumentoPorcentaje, aumentoCategoria, aumentoRedondeo]) {
+    campo.addEventListener('input', invalidarVistaAumento);
+    campo.addEventListener('change', invalidarVistaAumento);
+  }
   campos.categoria.input.addEventListener('change', sugerirCodigo);
 
   // El panel se cierra con Cancelar, tocando el fondo o con Escape
@@ -98,7 +134,9 @@ function iniciar() {
     }
   });
   document.addEventListener('keydown', (evento) => {
-    if (evento.key === 'Escape' && !panelFondo.hidden) cerrarFormulario();
+    if (evento.key !== 'Escape') return;
+    if (!panelFondo.hidden) cerrarFormulario();
+    if (!panelAumento.hidden) cerrarAumento();
   });
 
   cargar(true);
@@ -308,6 +346,7 @@ function cambiarVista(nueva) {
   tabActivos.setAttribute('aria-pressed', String(nueva === 'activos'));
   tabBajas.setAttribute('aria-pressed', String(nueva === 'bajas'));
   btnNuevo.hidden = nueva === 'bajas'; // en "Dados de baja" no se crean platos
+  btnAumento.hidden = nueva === 'bajas'; // el aumento es solo para los activos
   cancelarConfirmacionBaja(false);
   dibujar();
 }
@@ -474,6 +513,152 @@ function limpiarErrores() {
     campos[nombre].input.removeAttribute('aria-invalid');
   }
   errorForm.hidden = true;
+}
+
+/* ---------- Aumento de precios por % ----------
+   1. Porcentaje + categoría + redondeo → "Ver cómo quedan": el
+      SERVIDOR calcula cada precio nuevo (misma fórmula que al aplicar).
+   2. "Aplicar aumento" en dos toques: el primero pide confirmación
+      diciendo cuántos platos cambian, el segundo aplica.
+   3. Si cambia algún dato después de ver la vista previa, hay que
+      volver a verla: nunca se aplica algo distinto de lo que se vio. */
+
+function abrirAumento() {
+  cancelarConfirmacionBaja(true);
+  ocultarAviso();
+  elementoAnterior = document.activeElement;
+
+  // Categorías del menú (la letra es el valor, como en el formulario de plato)
+  aumentoCategoria.textContent = '';
+  aumentoCategoria.appendChild(new Option('Todos los platos activos', ''));
+  for (const cat of categorias) {
+    aumentoCategoria.appendChild(new Option(cat.codigo + ' · ' + cat.nombre, cat.codigo));
+  }
+
+  aumentoPorcentaje.value = '';
+  aumentoRedondeo.value = '100';
+  invalidarVistaAumento();
+  panelAumento.hidden = false;
+  aumentoPorcentaje.focus();
+}
+
+function cerrarAumento() {
+  if (aplicandoAumento) return; // no se cierra a mitad del guardado
+  panelAumento.hidden = true;
+  invalidarVistaAumento();
+  if (elementoAnterior && document.contains(elementoAnterior)) elementoAnterior.focus();
+}
+
+// Borra la vista previa y esconde "Aplicar"
+function invalidarVistaAumento() {
+  vistaAumentoDatos = null;
+  vistaAumento.hidden = true;
+  tablaAumento.textContent = '';
+  errorAumento.hidden = true;
+  btnAplicarAumento.hidden = true;
+  reiniciarBotonAumento();
+}
+
+function reiniciarBotonAumento() {
+  confirmandoAumento = false;
+  btnAplicarAumento.classList.remove('menu-boton--confirmando');
+  btnAplicarAumento.classList.add('boton--peligro');
+  btnAplicarAumento.disabled = false;
+  btnAplicarAumento.textContent = 'Aplicar aumento';
+}
+
+function mostrarErrorAumento(texto) {
+  errorAumento.textContent = texto;
+  errorAumento.hidden = false;
+}
+
+async function verVistaAumento(evento) {
+  evento.preventDefault();
+  invalidarVistaAumento();
+
+  const datos = {
+    porcentaje: aumentoPorcentaje.value.trim(),
+    categoria: aumentoCategoria.value,
+    redondeo: aumentoRedondeo.value
+  };
+
+  btnVistaAumento.disabled = true;
+  btnVistaAumento.textContent = 'Calculando...';
+  try {
+    const filas = await vistaAumentoPrecios(datos.porcentaje, datos.categoria, datos.redondeo);
+
+    if (filas.length === 0) {
+      mostrarErrorAumento('No hay platos activos en esa categoría.');
+      return;
+    }
+
+    // Tabla: createElement + textContent (nunca innerHTML con datos)
+    for (const f of filas) {
+      const tr = document.createElement('tr');
+      tr.append(
+        crearTexto('td', '', f.codigo),
+        crearTexto('td', '', f.nombre),
+        crearTexto('td', 'aumento-num', formatoPesos(f.precio_actual)),
+        crearTexto('td', 'aumento-num aumento-nuevo', formatoPesos(f.precio_nuevo))
+      );
+      tablaAumento.appendChild(tr);
+    }
+
+    const textoCategoria = datos.categoria
+      ? 'categoría ' + aumentoCategoria.options[aumentoCategoria.selectedIndex].textContent
+      : 'todos los platos';
+    resumenAumento.textContent = filas.length + (filas.length === 1 ? ' plato' : ' platos') +
+      ' · + ' + datos.porcentaje.replace('.', ',') + ' % · ' + textoCategoria +
+      (datos.redondeo !== '1' ? ' · redondeo $ ' + datos.redondeo : '');
+
+    vistaAumentoDatos = { ...datos, cantidad: filas.length };
+    vistaAumento.hidden = false;
+    btnAplicarAumento.hidden = false;
+  } catch (e) {
+    if (esSesionVencida(e)) return;
+    mostrarErrorAumento(e.message);
+  } finally {
+    btnVistaAumento.disabled = false;
+    btnVistaAumento.textContent = 'Ver cómo quedan';
+  }
+}
+
+async function aplicarAumento() {
+  if (aplicandoAumento || !vistaAumentoDatos) return;
+  const datos = vistaAumentoDatos;
+
+  // Primer toque: confirmación
+  if (!confirmandoAumento) {
+    confirmandoAumento = true;
+    btnAplicarAumento.classList.remove('boton--peligro');
+    btnAplicarAumento.classList.add('menu-boton--confirmando');
+    btnAplicarAumento.textContent = '¿Cambiar ' + datos.cantidad +
+      (datos.cantidad === 1 ? ' precio' : ' precios') + '? Tocá de nuevo';
+    return;
+  }
+
+  // Segundo toque: se aplica
+  aplicandoAumento = true;
+  btnAplicarAumento.disabled = true;
+  btnCancelarAumento.disabled = true;
+  btnAplicarAumento.textContent = 'Aplicando...';
+
+  try {
+    const r = await aplicarAumentoPrecios(datos.porcentaje, datos.categoria, datos.redondeo);
+    aplicandoAumento = false;
+    btnCancelarAumento.disabled = false;
+    cerrarAumento();
+    mostrarAviso('Precios actualizados ✔ ' + r.platos_actualizados +
+      (r.platos_actualizados === 1 ? ' plato' : ' platos') + ' con + ' +
+      String(datos.porcentaje).replace('.', ',') + ' %. Los pedidos ya hechos mantienen su precio.');
+    await cargar(false);
+  } catch (e) {
+    aplicandoAumento = false;
+    btnCancelarAumento.disabled = false;
+    if (esSesionVencida(e)) return;
+    reiniciarBotonAumento();
+    mostrarErrorAumento(e.message);
+  }
 }
 
 /* ---------- Mensajes y utilidades ---------- */

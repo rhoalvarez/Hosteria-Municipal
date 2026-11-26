@@ -1,0 +1,79 @@
+/* =========================================================
+   menu-aumento.css — Aumento de precios por % (pages/menu.html)
+   Solo lo nuevo del panel; el resto (panel, campo, boton) viene
+   de estilos.css.
+   ========================================================= */
+
+/* El panel tiene una tabla: un poco más ancho y con scroll adentro */
+.panel-aumento {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .panel-aumento {
+    max-width: 560px;
+  }
+}
+
+/* "4 platos · + 15 % · redondeo $ 100" */
+.aumento-resumen {
+  margin: var(--espacio, 16px) 0 8px;
+  font-weight: 600;
+}
+
+/* Si la tabla no entra (celular), se desliza de costado */
+.aumento-tabla-contenedor {
+  max-height: 45vh;
+  overflow: auto;
+  border: 1px solid var(--color-borde, #d5dae1);
+  border-radius: var(--radio, 10px);
+}
+
+.aumento-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.aumento-tabla th,
+.aumento-tabla td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-borde, #d5dae1);
+}
+
+/* Encabezado fijo mientras se desliza la lista */
+.aumento-tabla th {
+  position: sticky;
+  top: 0;
+  font-size: 0.85rem;
+  color: var(--color-texto-suave, #5b6573);
+  background: #f4f6f8;
+}
+
+/* Números a la derecha, como en una planilla */
+.aumento-tabla .aumento-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* El precio nuevo, destacado */
+.aumento-tabla td.aumento-nuevo {
+  font-weight: 700;
+  color: var(--color-exito, #55692f);
+}
+
+.aumento-nota {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--color-texto-suave, #5b6573);
+}
+
+/* Segundo toque de "Aplicar aumento": amarillo con letra oscura
+   (igual que "Dar de baja" en el menú) */
+#btn-aplicar-aumento.menu-boton--confirmando {
+  background: var(--logo-amarillo, #edcc3b);
+  color: #2b2b2b;
+}
