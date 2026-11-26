@@ -1539,3 +1539,201 @@ async function registrarMovimiento(datos) {
   });
   return { id: r.id_movimiento, saldo: aImporte(r.saldo) };
 }
+
+/* =========================================================
+   ESTADÍSTICAS (RF-EST) — Incremento 3
+   ---------------------------------------------------------
+   Rutas /api/estadisticas/... solo para el ENCARGADO (el
+   backend responde 403 a los demás).
+
+   Igual que la caja, NO tiene mock: los cálculos (qué cuenta
+   como venta, sumas por forma de pago, agrupar por semana o mes)
+   viven en 95_estadisticas.sql. Copiarlos acá sería tener dos
+   versiones de las mismas reglas.
+
+   Fechas: se mandan como texto 'AAAA-MM-DD' armado con la fecha
+   LOCAL (no con toISOString(), que usa UTC: después de las 21 h
+   de Argentina ya daría el día siguiente).
+
+   Períodos: la base los devuelve como texto, igual que acá:
+   - semana: '2026-11-23' (el LUNES de esa semana)
+   - mes:    '2026-11'
+   ========================================================= */
+
+const AGRUPACIONES_EST = ['semana', 'mes'];
+const MAX_DIAS_EST = 400; // (propuesta) el mismo límite que el backend
+const MS_POR_DIA = 24 * 60 * 60 * 1000;
+
+function estSoloBackendReal() {
+  throw errorApi('Las estadísticas funcionan solo con el backend real: poné USAR_MOCK = false en api.js', 501);
+}
+
+/* ---------- Ayudas de fechas (también las usa la pantalla) ---------- */
+
+// Date → 'AAAA-MM-DD' usando la fecha LOCAL del navegador
+function fechaATexto(fecha) {
+  const a = fecha.getFullYear();
+  const m = String(fecha.getMonth() + 1).padStart(2, '0');
+  const d = String(fecha.getDate()).padStart(2, '0');
+  return a + '-' + m + '-' + d;
+}
+
+// 'AAAA-MM-DD' → Date local a las 00:00. Devuelve null si el texto
+// no tiene ese formato o el día no existe (por ejemplo 2026-02-31).
+function textoAFecha(texto) {
+  const t = String(texto || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+  const [a, m, d] = t.split('-').map(Number);
+  const f = new Date(a, m - 1, d);
+  if (f.getFullYear() !== a || f.getMonth() !== m - 1 || f.getDate() !== d) return null;
+  return f;
+}
+
+// Lunes de la semana de una fecha.
+// getDay() da domingo = 0 ... sábado = 6. Con (getDay() + 6) % 7 queda
+// lunes = 0 ... domingo = 6, igual que WEEKDAY() de MariaDB.
+function lunesDe(fecha) {
+  const f = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  f.setDate(f.getDate() - (f.getDay() + 6) % 7);
+  return f;
+}
+
+// Semana (lunes a domingo) que contiene la fecha. Sin fecha: la de hoy.
+// Devuelve { desde, hasta } en texto 'AAAA-MM-DD'.
+function rangoSemana(fecha) {
+  const lunes = lunesDe(fecha || new Date());
+  const domingo = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + 6);
+  return { desde: fechaATexto(lunes), hasta: fechaATexto(domingo) };
+}
+
+// Mes completo que contiene la fecha. Sin fecha: el mes actual.
+// El día 0 del mes siguiente es el último día de este mes.
+function rangoMes(fecha) {
+  const f = fecha || new Date();
+  const primero = new Date(f.getFullYear(), f.getMonth(), 1);
+  const ultimo = new Date(f.getFullYear(), f.getMonth() + 1, 0);
+  return { desde: fechaATexto(primero), hasta: fechaATexto(ultimo) };
+}
+
+// Mismas validaciones que el backend. Devuelve las dos fechas como Date.
+function validarPeriodoEst(desde, hasta) {
+  const fd = textoAFecha(desde);
+  const fh = textoAFecha(hasta);
+  if (!fd) throw errorApi('La fecha desde no es válida', 400);
+  if (!fh) throw errorApi('La fecha hasta no es válida', 400);
+  if (fd > fh) throw errorApi('La fecha desde no puede ser posterior a la fecha hasta', 400);
+  if (Math.round((fh - fd) / MS_POR_DIA) > MAX_DIAS_EST) {
+    throw errorApi('El período no puede ser mayor a un año', 400);
+  }
+  return { fd, fh };
+}
+
+/* Todos los períodos entre dos fechas, con el MISMO texto que arma la
+   base. Sirve para completar con ceros las semanas o meses sin cobros:
+   así el gráfico muestra la barra vacía en vez de saltearse la semana
+   (si no, parecería que no faltó ninguna). */
+function periodosEntre(fd, fh, agrupar) {
+  const lista = [];
+  if (agrupar === 'mes') {
+    const f = new Date(fd.getFullYear(), fd.getMonth(), 1);
+    while (f <= fh) {
+      lista.push(fechaATexto(f).slice(0, 7)); // '2026-11-01' → '2026-11'
+      f.setMonth(f.getMonth() + 1);
+    }
+  } else {
+    // La primera semana empieza el lunes anterior (o igual) a "desde",
+    // igual que en la base: un cobro del domingo 1/11 va a la semana
+    // del lunes 26/10.
+    const f = lunesDe(fd);
+    while (f <= fh) {
+      lista.push(fechaATexto(f));
+      f.setDate(f.getDate() + 7);
+    }
+  }
+  return lista;
+}
+
+/* ---------- Adaptadores ---------- */
+
+// Fila de sp_est_platos → formato de las pantallas
+function adaptarPlatoVendido(f) {
+  return {
+    id: f.id_item,
+    codigo: f.codigo,
+    nombre: f.nombre,
+    categoria: f.letra,                 // letra, como en el resto de las pantallas
+    categoria_nombre: f.categoria,
+    cantidad: Number(f.cantidad || 0),
+    importe: aImporte(f.importe),
+    cantidad_sin_cargo: Number(f.cantidad_sin_cargo || 0)
+  };
+}
+
+// Fila de sp_est_ingresos → formato de las pantallas.
+// Si el período no tuvo cobros (f vacío), queda todo en 0.
+function adaptarIngreso(periodo, f) {
+  const x = f || {};
+  return {
+    periodo,
+    efectivo: aImporte(x.efectivo),
+    transferencia: aImporte(x.transferencia),
+    cargo_habitacion: aImporte(x.cargo_habitacion), // 0 hasta habilitar RF-HAB
+    total: aImporte(x.total),
+    cantidad_cobros: Number(x.cantidad_cobros || 0),
+    cantidad_sin_cargo: Number(x.cantidad_sin_cargo || 0),
+    valor_sin_cargo: aImporte(x.valor_sin_cargo)
+  };
+}
+
+/* ---------- Funciones públicas ---------- */
+
+/* Ranking de platos vendidos (RF-EST-01), del más vendido al menos.
+   desde, hasta: 'AAAA-MM-DD' (días incluidos)
+   letraCategoria: 'A', 'B', 'D'... o vacío para todas
+   Devuelve [{ id, codigo, nombre, categoria, categoria_nombre,
+               cantidad, importe, cantidad_sin_cargo }] */
+async function obtenerRankingPlatos(desde, hasta, letraCategoria) {
+  if (USAR_MOCK) estSoloBackendReal();
+  validarPeriodoEst(desde, hasta);
+
+  // Las pantallas trabajan con la LETRA; la base, con id_categoria
+  let idCategoria = 0; // 0 = todas
+  const letra = String(letraCategoria || '').trim().toUpperCase();
+  if (letra) {
+    const categorias = await categoriasDelServidor();
+    const c = categorias.find(x => x.letra === letra);
+    if (!c) throw errorApi('La categoría no existe', 400);
+    idCategoria = c.id_categoria;
+  }
+
+  const filas = await peticion('GET', '/estadisticas/platos' +
+    '?desde=' + encodeURIComponent(desde) +
+    '&hasta=' + encodeURIComponent(hasta) +
+    '&categoria=' + idCategoria);
+  return filas.map(adaptarPlatoVendido);
+}
+
+/* Ingresos por semana o por mes, por forma de pago (RF-EST-02).
+   agrupar: 'semana' | 'mes'
+   Devuelve UNA fila por período, TODOS los períodos del rango
+   (los que no tuvieron cobros vienen en 0), del más viejo al más nuevo:
+   [{ periodo, efectivo, transferencia, cargo_habitacion, total,
+      cantidad_cobros, cantidad_sin_cargo, valor_sin_cargo }] */
+async function obtenerIngresos(desde, hasta, agrupar) {
+  if (USAR_MOCK) estSoloBackendReal();
+  const { fd, fh } = validarPeriodoEst(desde, hasta);
+
+  const modo = aMinuscula(String(agrupar || 'semana').trim());
+  if (!AGRUPACIONES_EST.includes(modo)) {
+    throw errorApi('Agrupar tiene que ser por semana o por mes', 400);
+  }
+
+  const filas = await peticion('GET', '/estadisticas/ingresos' +
+    '?desde=' + encodeURIComponent(desde) +
+    '&hasta=' + encodeURIComponent(hasta) +
+    '&agrupar=' + modo.toUpperCase());
+
+  // Map periodo → fila, para encontrar rápido cada período
+  const porPeriodo = new Map(filas.map(f => [f.periodo, f]));
+  return periodosEntre(fd, fh, modo).map(p => adaptarIngreso(p, porPeriodo.get(p)));
+}

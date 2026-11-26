@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#3D6570">
+  <title>Estadísticas · Portal de la Luna</title>
+  <link rel="stylesheet" href="../css/estilos.css">
+  <!-- Reusamos de la caja: tarjetas de cifras, tabla, subtítulos -->
+  <link rel="stylesheet" href="../css/caja.css">
+  <!-- Estilos propios: filtros y gráficos de barras (Inc. 3) -->
+  <link rel="stylesheet" href="../css/estadisticas.css">
+  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="encabezado">
+    <div>
+      <h1 class="encabezado__titulo">Estadísticas</h1>
+      <span id="nombre-usuario" class="encabezado__usuario"></span>
+    </div>
+    <div class="encabezado__acciones">
+      <!-- Enlaces (<a>) y no botones porque llevan a otra página -->
+      <a href="mesas.html" class="boton boton--secundario">Mesas</a>
+      <a href="caja.html" class="boton boton--secundario">Caja</a>
+      <button id="btn-salir" class="boton boton--secundario">Salir</button>
+    </div>
+  </header>
+
+  <main class="contenedor">
+    <!-- Mensajes de la pantalla: "Cargando...", errores de conexión -->
+    <p id="mensaje" class="mensaje" role="status">Cargando estadísticas...</p>
+
+    <!-- =====================================================
+         FILTRO DE PERÍODO (vale para ingresos y para platos)
+         Solo cuentan las mesas COBRADAS, por la fecha del cobro.
+         ===================================================== -->
+    <form id="form-filtros" class="tarjeta est-filtros" novalidate>
+      <div class="campo">
+        <label for="filtro-periodo">Período</label>
+        <select id="filtro-periodo">
+          <option value="semana">Esta semana</option>
+          <option value="semana_anterior">Semana anterior</option>
+          <option value="mes">Este mes</option>
+          <option value="mes_anterior">Mes anterior</option>
+          <option value="elegir">Elegir fechas...</option>
+        </select>
+      </div>
+
+      <!-- type="date": el celular y la PC muestran su propio
+           calendario, funciona sin internet, y el valor llega siempre
+           como AAAA-MM-DD (el formato que espera el backend) -->
+      <div id="campos-fechas" class="est-fechas" hidden>
+        <div class="campo">
+          <label for="filtro-desde">Desde</label>
+          <input id="filtro-desde" type="date">
+        </div>
+        <div class="campo">
+          <label for="filtro-hasta">Hasta</label>
+          <input id="filtro-hasta" type="date">
+        </div>
+      </div>
+
+      <p id="error-filtros" class="mensaje mensaje--error" role="alert" hidden></p>
+      <button type="submit" id="btn-ver" class="boton boton--primario boton--bloque">Ver estadísticas</button>
+    </form>
+
+    <!-- "Del lunes 23/11/2026 al domingo 29/11/2026" -->
+    <p id="periodo-info" class="caja-ayuda"></p>
+
+    <!-- =====================================================
+         INGRESOS (RF-EST-02): por semana o por mes, por forma de pago
+         ===================================================== -->
+    <section id="sec-ingresos" class="est-seccion" hidden>
+      <div class="est-titulo-fila">
+        <h2 class="caja-subtitulo">Ingresos</h2>
+        <div class="campo est-campo-chico">
+          <label for="filtro-agrupar">Agrupar</label>
+          <select id="filtro-agrupar">
+            <option value="semana">Por semana</option>
+            <option value="mes">Por mes</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Totales del período (las mismas tarjetas que la caja) -->
+      <div class="caja-resumen">
+        <div class="tarjeta caja-cifra caja-cifra--destacada">
+          <span class="caja-cifra__titulo">Total cobrado</span>
+          <strong id="res-total" class="caja-cifra__valor">$ 0</strong>
+          <span id="res-cobros" class="caja-cifra__detalle"></span>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Efectivo</span>
+          <strong id="res-efectivo" class="caja-cifra__valor">$ 0</strong>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Transferencias</span>
+          <strong id="res-transferencia" class="caja-cifra__valor">$ 0</strong>
+        </div>
+        <div class="tarjeta caja-cifra">
+          <span class="caja-cifra__titulo">Sin cargo</span>
+          <strong id="res-sin-cargo" class="caja-cifra__valor">0</strong>
+          <!-- "$ 9.500 que no se cobraron" -->
+          <span id="res-sin-cargo-detalle" class="caja-cifra__detalle"></span>
+        </div>
+      </div>
+
+      <!-- Gráfico de barras propio (RF-EST-03), sin librerías.
+           Cada barra se divide en efectivo y transferencia.
+           Los valores van ESCRITOS al lado: el color solo no alcanza. -->
+      <div class="tarjeta">
+        <p class="est-leyenda" aria-hidden="true">
+          <span class="est-muestra est-muestra--efectivo"></span> Efectivo
+          <span class="est-muestra est-muestra--transferencia"></span> Transferencia
+        </p>
+        <p id="sin-ingresos" class="mensaje" hidden>No hubo cobros en este período.</p>
+        <ul id="grafico-ingresos" class="est-grafico" aria-label="Ingresos por período"></ul>
+      </div>
+
+      <!-- La misma información en tabla, con los números exactos -->
+      <details class="caja-detalles">
+        <summary>Ver tabla de ingresos</summary>
+        <div class="caja-tabla-contenedor" tabindex="0" aria-label="Tabla de ingresos">
+          <table class="caja-tabla">
+            <thead>
+              <tr>
+                <th scope="col">Período</th>
+                <th scope="col" class="caja-num">Efectivo</th>
+                <th scope="col" class="caja-num">Transferencia</th>
+                <th scope="col" class="caja-num">Total</th>
+                <th scope="col" class="caja-num">Mesas cobradas</th>
+                <th scope="col" class="caja-num">Sin cargo</th>
+                <th scope="col" class="caja-num">Valor sin cargo</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-ingresos"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <!-- RF-EST-04: se abre con Excel -->
+      <button type="button" id="btn-csv-ingresos" class="boton boton--secundario">Exportar ingresos (CSV)</button>
+    </section>
+
+    <!-- =====================================================
+         PLATOS MÁS VENDIDOS (RF-EST-01)
+         ===================================================== -->
+    <section id="sec-platos" class="est-seccion" hidden>
+      <div class="est-titulo-fila">
+        <h2 class="caja-subtitulo">Platos más vendidos</h2>
+        <div class="campo est-campo-chico">
+          <label for="filtro-categoria">Categoría</label>
+          <!-- Lo llena estadisticas.js con las categorías de la base -->
+          <select id="filtro-categoria">
+            <option value="">Todas</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <p id="sin-platos" class="mensaje" hidden>No se vendieron platos en este período.</p>
+        <!-- <ol>: es un ranking, el orden importa -->
+        <ol id="grafico-platos" class="est-grafico est-grafico--ranking" aria-label="Ranking de platos"></ol>
+      </div>
+
+      <button type="button" id="btn-csv-platos" class="boton boton--secundario">Exportar platos (CSV)</button>
+    </section>
+  </main>
+
+  <!-- =====================================================
+       PLANTILLAS: estadisticas.js las copia por cada barra.
+       Así la estructura queda en el HTML y no armada a mano en JS.
+       ===================================================== -->
+  <template id="plantilla-barra-ingreso">
+    <li class="est-barra">
+      <span class="est-barra__etiqueta"></span>
+      <span class="est-barra__pista">
+        <span class="est-barra__parte est-barra__parte--efectivo"></span>
+        <span class="est-barra__parte est-barra__parte--transferencia"></span>
+      </span>
+      <span class="est-barra__valor"></span>
+    </li>
+  </template>
+
+  <template id="plantilla-barra-plato">
+    <li class="est-barra">
+      <span class="est-barra__etiqueta">
+        <span class="est-barra__nombre"></span>
+        <span class="est-barra__extra"></span>
+      </span>
+      <span class="est-barra__pista">
+        <span class="est-barra__parte est-barra__parte--plato"></span>
+      </span>
+      <span class="est-barra__valor"></span>
+    </li>
+  </template>
+
+  <!-- El orden importa: api.js usa funciones de sesion.js, y
+       estadisticas.js usa funciones de sesion.js, api.js y formato.js -->
+  <script src="../js/sesion.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/formato.js"></script>
+  <script src="../js/estadisticas.js"></script>
+</body>
+</html>

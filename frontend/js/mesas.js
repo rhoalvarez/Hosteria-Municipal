@@ -152,9 +152,12 @@ function iniciarPantalla() {
   // y el backend tiene que rechazar las rutas del menú para otros roles.
   // Lo mismo con la Caja (Inc. 3): caja.html usa exigirRol(['encargado'])
   // y las rutas /api/caja responden 403 a los otros roles.
+  // Y con las Estadísticas (Inc. 3): estadisticas.html usa exigirRol(['encargado'])
+  // y las rutas /api/estadisticas responden 403 a los otros roles.
   if (esEncargado) {
     document.getElementById('enlace-menu').hidden = false;
     document.getElementById('enlace-caja').hidden = false;
+    document.getElementById('enlace-estadisticas').hidden = false;
   }
 
   // UN solo "escuchador" para toda la grilla (delegación de eventos)

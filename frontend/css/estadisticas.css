@@ -1,0 +1,197 @@
+/* =========================================================
+   estadisticas.css — Pantalla de ESTADÍSTICAS (Inc. 3)
+   ---------------------------------------------------------
+   Se carga DESPUÉS de estilos.css y caja.css: de la caja
+   reusamos las tarjetas de cifras (caja-cifra), la tabla
+   (caja-tabla), subtítulos y textos de ayuda. Acá va solo
+   lo nuevo: filtros y gráficos de barras (RF-EST-03).
+   Los gráficos son HTML + CSS, sin librerías: cada barra es
+   un <span> al que estadisticas.js le pone el ancho en %.
+   Los var() llevan el color de la paleta como respaldo.
+   ========================================================= */
+
+/* Este archivo solo lo usa estadisticas.html: lo que tenga
+   "hidden" no se ve, aunque arriba tenga un display */
+[hidden] {
+  display: none !important;
+}
+
+/* Colores de las formas de pago (los mismos en barras y leyenda).
+   Bien distintos entre sí, y con el valor escrito al lado de la
+   barra: el color solo no alcanza (daltonismo). */
+:root {
+  --est-efectivo: var(--color-primario, #3d6570);
+  --est-transferencia: #c58b2a;
+  --est-plato: var(--color-primario, #3d6570);
+  --est-pista: #e8ecef;
+}
+
+/* ---------- Filtros ---------- */
+.est-filtros {
+  max-width: 480px;
+  margin: 0 auto var(--espacio, 16px);
+}
+
+/* Desde / Hasta: uno al lado del otro (entran bien en el celular) */
+.est-fechas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ---------- Secciones ---------- */
+.est-seccion {
+  margin-bottom: calc(var(--espacio, 16px) * 2);
+}
+
+/* Título de la sección con su combo (Agrupar / Categoría).
+   En el celular el combo baja abajo del título; en la PC van
+   en la misma línea (ver al final). */
+.est-titulo-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.est-titulo-fila .caja-subtitulo {
+  margin: 0;
+}
+
+.est-campo-chico {
+  margin: 0;
+  min-width: 180px;
+}
+
+/* Los botones de exportar, separados del bloque de arriba */
+.est-seccion > .boton {
+  margin-top: 12px;
+}
+
+/* ---------- Leyenda ---------- */
+.est-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--color-texto-suave, #5b6573);
+}
+
+.est-muestra {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.est-muestra--efectivo      { background: var(--est-efectivo); }
+.est-muestra--transferencia { background: var(--est-transferencia); margin-left: 8px; }
+
+/* ---------- Gráfico de barras ---------- */
+/* Es una lista (<ul> o <ol>): le sacamos viñetas y sangría */
+.est-grafico {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Una barra. En el CELULAR:
+     Semana del 23/11                 ← etiqueta (toda la línea)
+     [██████████░░░░░░░░]  $ 37.500   ← barra + valor
+   Grid de 2 columnas: la etiqueta ocupa las dos. */
+.est-barra {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-borde, #d5dae1);
+}
+
+.est-barra:last-child {
+  border-bottom: none;
+}
+
+.est-barra__etiqueta {
+  grid-column: 1 / -1;
+  font-weight: 600;
+}
+
+/* Código y categoría del plato, debajo del nombre */
+.est-barra__extra {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--color-texto-suave, #5b6573);
+}
+
+/* El "riel" gris donde crece la barra (100% = el valor más alto) */
+.est-barra__pista {
+  display: flex;               /* las partes van una al lado de la otra */
+  height: 22px;
+  overflow: hidden;
+  background: var(--est-pista);
+  border-radius: 4px;
+}
+
+/* Cada parte de la barra. El ancho lo pone estadisticas.js
+   (style.width = "45%"). Arranca en 0 y crece con la transición. */
+.est-barra__parte {
+  width: 0;
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.est-barra__parte--efectivo      { background: var(--est-efectivo); }
+.est-barra__parte--transferencia { background: var(--est-transferencia); }
+.est-barra__parte--plato         { background: var(--est-plato); }
+
+/* El número escrito al lado de la barra */
+.est-barra__valor {
+  min-width: 90px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;   /* todos los dígitos del mismo ancho */
+  white-space: nowrap;
+}
+
+/* Período sin cobros: más apagado, para que se note que fue 0 */
+.est-barra--vacia .est-barra__etiqueta,
+.est-barra--vacia .est-barra__valor {
+  color: var(--color-texto-suave, #5b6573);
+  font-weight: 400;
+}
+
+/* Ranking: el número de puesto delante del nombre (1., 2., 3....) */
+.est-grafico--ranking {
+  counter-reset: puesto;
+}
+
+.est-grafico--ranking .est-barra__nombre::before {
+  counter-increment: puesto;
+  content: counter(puesto) ". ";
+  color: var(--color-texto-suave, #5b6573);
+}
+
+/* Si la persona pidió menos animaciones en su sistema, sin transición */
+@media (prefers-reduced-motion: reduce) {
+  .est-barra__parte {
+    transition: none;
+  }
+}
+
+/* ---------- Tablet y PC ---------- */
+/* Etiqueta | barra | valor en la misma línea */
+@media (min-width: 768px) {
+  .est-barra {
+    grid-template-columns: 220px 1fr auto;
+  }
+
+  .est-barra__etiqueta {
+    grid-column: auto;
+  }
+}
