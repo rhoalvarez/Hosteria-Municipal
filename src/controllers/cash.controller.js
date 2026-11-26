@@ -2,18 +2,45 @@
 // cash.controller.js – Caja del restaurante (Incremento 3)
 // ============================================================
 // Las reglas de negocio (sumas, saldos, arqueo, auditoría del sin cargo
-// y de la reapertura) están en los procedimientos de 90_caja.sql.
+// y de la reapertura) están en los procedimientos de 90_caja.sql y
+// 98_cargo_comprobante.sql.
 // Acá solo se valida que los datos tengan la forma correcta antes de
 // mandarlos a la base, y se arma la respuesta para el frontend.
 // ============================================================
+
+// fs, path y crypto vienen con Node.js: no son librerías nuevas
+const fs = require("fs/promises");
+const path = require("path");
+const crypto = require("crypto");
 
 const { callProcedure } = require("../config/db");
 const HttpError = require("../utils/httpError");
 const audit = require("../services/audit.service");
 
-// Formas de pago habilitadas por ahora.
-// CARGO_HABITACION se agrega cuando se acuerden las tablas con reservas.
+// Formas de los movimientos MANUALES (gastos, proveedores, ajustes):
+// solo lo que entra o sale del cajón o de la cuenta.
 const FORMAS_PAGO = ["EFECTIVO", "TRANSFERENCIA"];
+
+// Formas para COBRAR una mesa: además, cargo a habitación (RF-HAB).
+// El cargo no entra a la caja: lo cobra recepción cuando el huésped se va.
+const FORMAS_COBRO = ["EFECTIVO", "TRANSFERENCIA", "CARGO_HABITACION"];
+
+// ---------- Fotos de los comprobantes de transferencia (RF-CAJ-13/14) ----------
+// Se guardan en la carpeta uploads/comprobantes del servidor (fuera de
+// frontend/, así NO se pueden abrir con una dirección sin iniciar sesión).
+// La base guarda solo el nombre del archivo.
+// Este archivo está en src/controllers: se suben dos niveles hasta la raíz.
+const CARPETA_COMPROBANTES = path.join(__dirname, "..", "..", "uploads", "comprobantes");
+
+// La pantalla achica la foto antes de mandarla (unos 200 KB).
+// 700 KB de margen. express.json acepta hasta 1 MB (app.js).
+const MAX_BYTES_COMPROBANTE = 700 * 1024;
+
+// Nombre que arma el servidor: "1764190000000-ab12cd34ef56ab12.jpg"
+// (fecha en milisegundos + 16 letras al azar). Si un nombre no tiene
+// EXACTAMENTE este formato, se rechaza: así nadie puede pedir
+// "../../.env" u otro archivo del servidor.
+const FORMATO_ARCHIVO = /^\d{13}-[a-f0-9]{16}\.(jpg|png)$/;
 
 // Máximo de formas de pago en un mismo cobro (pago dividido).
 const MAX_PAGOS = 4;
@@ -229,10 +256,11 @@ exports.cobrarComanda = async (req, res) => {
     }
 
     // Se arma cada pago con los campos exactos que espera el procedimiento.
-    pagos = body.pagos.map((p, i) => {
+    pagos = [];
+    for (const [i, p] of body.pagos.entries()) {
       const forma = String(p?.forma ?? "").trim().toUpperCase();
 
-      if (!FORMAS_PAGO.includes(forma)) {
+      if (!FORMAS_COBRO.includes(forma)) {
         throw new HttpError(400, `Pago ${i + 1}: forma de pago no permitida.`);
       }
 
@@ -243,12 +271,34 @@ exports.cobrarComanda = async (req, res) => {
         throw new HttpError(400, `Pago ${i + 1}: indicá el medio de la transferencia.`);
       }
 
-      return {
+      // Cargo a habitación: qué huésped (la base controla que siga alojado)
+      let idEstadia = 0;
+      if (forma === "CARGO_HABITACION") {
+        idEstadia = Number(p.id_estadia);
+        if (!Number.isInteger(idEstadia) || idEstadia <= 0) {
+          throw new HttpError(400, `Pago ${i + 1}: elegí la habitación del huésped.`);
+        }
+      }
+
+      // Foto del comprobante: opcional, solo en transferencias.
+      // Tiene que ser un archivo que subió ESTE servidor.
+      let comprobante = "";
+      if (forma === "TRANSFERENCIA") {
+        comprobante = texto(p.comprobante, 40, `Pago ${i + 1}: comprobante`);
+        if (comprobante !== "" && !(await existeComprobante(comprobante))) {
+          throw new HttpError(400, `Pago ${i + 1}: la foto del comprobante no se encontró. Volvé a sacarla.`);
+        }
+      }
+
+      // Nunca mandamos null al procedimiento: '' y 0 (ver texto()).
+      pagos.push({
         forma,
         importe,
-        medio_transferencia: forma === "EFECTIVO" ? "" : medio,
-      };
-    });
+        medio_transferencia: forma === "TRANSFERENCIA" ? medio : "",
+        id_estadia: idEstadia,
+        comprobante,
+      });
+    }
 
     // Control previo (el procedimiento lo vuelve a controlar).
     // Se suma en centavos para evitar errores de redondeo de JavaScript
@@ -335,4 +385,96 @@ exports.registrarMovimiento = async (req, res) => {
   );
 
   res.status(201).json(r[0]);
+};
+// ------------------------------------------------------------
+// CARGO A HABITACIÓN (RF-HAB)
+// ------------------------------------------------------------
+
+// GET /api/caja/estadias-activas
+// Huéspedes alojados ahora, para el combo del cobro.
+// Sale de la vista v_rest_estadias_activas: es lo ÚNICO que hay que
+// cambiar para conectarlo con las tablas del sistema de reservas.
+exports.estadiasActivas = async (req, res) => {
+  const r = await callProcedure("sp_estadias_activas");
+  res.json(r);
+};
+
+// ------------------------------------------------------------
+// FOTO DEL COMPROBANTE DE TRANSFERENCIA (RF-CAJ-13/14)
+// ------------------------------------------------------------
+// Cómo funciona:
+//  1. El encargado saca la foto con el celular al cobrar. La pantalla
+//     la achica y la manda como texto (base64) en el JSON: así no hace
+//     falta ninguna librería para recibir archivos.
+//  2. El servidor controla que sea de verdad una imagen JPG o PNG
+//     (mira los primeros bytes, no solo lo que dice el texto), le pone
+//     un nombre al azar y la guarda en uploads/comprobantes.
+//  3. Devuelve el nombre; la pantalla lo manda junto con el cobro y
+//     queda en rest_cobro_pago.foto_comprobante.
+
+// ¿El nombre tiene el formato correcto y el archivo existe?
+async function existeComprobante(archivo) {
+  if (!FORMATO_ARCHIVO.test(archivo)) return false;
+  try {
+    await fs.access(path.join(CARPETA_COMPROBANTES, archivo));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// POST /api/caja/comprobantes   body: { imagen: "data:image/jpeg;base64,..." }
+// Responde { archivo: "1764190000000-ab12cd34ef56ab12.jpg" }
+exports.subirComprobante = async (req, res) => {
+  const imagen = req.body?.imagen;
+  if (typeof imagen !== "string") {
+    throw new HttpError(400, "Falta la foto del comprobante.");
+  }
+
+  const partes = /^data:image\/(jpeg|png);base64,([A-Za-z0-9+/]+={0,2})$/.exec(imagen);
+  if (!partes) {
+    throw new HttpError(400, "La foto tiene que ser JPG o PNG.");
+  }
+
+  const datos = Buffer.from(partes[2], "base64");
+  if (datos.length === 0) {
+    throw new HttpError(400, "La foto está vacía.");
+  }
+  if (datos.length > MAX_BYTES_COMPROBANTE) {
+    throw new HttpError(413, "La foto es demasiado grande.");
+  }
+
+  // "Firma" del archivo: los primeros bytes de un JPG son FF D8 FF y
+  // los de un PNG 89 50 4E 47. Así no se guarda cualquier cosa
+  // disfrazada de imagen.
+  const esJpg = datos[0] === 0xff && datos[1] === 0xd8 && datos[2] === 0xff;
+  const esPng = datos.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  if ((partes[1] === "jpeg" && !esJpg) || (partes[1] === "png" && !esPng)) {
+    throw new HttpError(400, "El archivo no es una imagen válida.");
+  }
+
+  // Nombre al azar: nunca se usa el nombre que manda el navegador
+  const archivo = Date.now() + "-" + crypto.randomBytes(8).toString("hex") + (esJpg ? ".jpg" : ".png");
+
+  await fs.mkdir(CARPETA_COMPROBANTES, { recursive: true });
+  // flag "wx": si por casualidad ya existe un archivo con ese nombre, falla en vez de pisarlo
+  await fs.writeFile(path.join(CARPETA_COMPROBANTES, archivo), datos, { flag: "wx" });
+
+  await auditarSinFallar(req.user.id_usuario, "SUBIR_COMPROBANTE", "rest_cobro_pago", null, { archivo });
+
+  res.status(201).json({ archivo });
+};
+
+// GET /api/caja/comprobantes/:archivo  → la imagen (solo ENCARGADO, con token)
+exports.verComprobante = async (req, res) => {
+  const archivo = String(req.params.archivo || "");
+  if (!FORMATO_ARCHIVO.test(archivo)) {
+    throw new HttpError(400, "Nombre de comprobante inválido.");
+  }
+  if (!(await existeComprobante(archivo))) {
+    throw new HttpError(404, "No se encontró la foto del comprobante.");
+  }
+  // Que el navegador no la guarde en caché: es un dato privado
+  res.set("Cache-Control", "private, no-store");
+  res.sendFile(path.join(CARPETA_COMPROBANTES, archivo));
 };
