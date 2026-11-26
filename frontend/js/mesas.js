@@ -17,6 +17,8 @@
        RF-CAJ-13/14) y cargo a habitación (RF-HAB).
      - ocupada o cuenta pedida + ENCARGADO → botón "Anular" en cada
        plato ya enviado (RF-PED-06): motivo obligatorio y dos toques.
+   Además, arriba de la grilla: pedidos LISTOS para llevar (RF-PED-05),
+   con vibración en el celular cuando llega uno nuevo.
    Los datos SIEMPRE se piden a api.js, nunca con fetch directo.
    ========================================================= */
 
@@ -55,6 +57,8 @@ sessionStorage.removeItem('rest_aviso_mesas');
 const grillaMesas = document.getElementById('grilla-mesas');
 const mensaje = document.getElementById('mensaje');
 const avisoQr = document.getElementById('aviso-qr');
+const avisoListos = document.getElementById('aviso-listos');
+const listaListos = document.getElementById('lista-listos');
 const panelFondo = document.getElementById('panel-fondo');
 const panelTitulo = document.getElementById('panel-titulo');
 
@@ -127,6 +131,14 @@ let confirmandoCobro = false;  // true después del primer toque en "Cobrar"
 let anulando = false;           // true mientras se manda la anulación (evita doble toque)
 let confirmandoAnular = false;  // true después del primer toque en "Confirmar anulación"
 
+// Pedidos listos para llevar (RF-PED-05)
+// "Ya lo llevé" se guarda en ESTE celular (localStorage): la ERS no
+// tiene un estado "entregado", así que no se cambia nada en la base.
+const CLAVE_LISTOS_VISTOS = 'rest_listos_vistos';
+let pedidosListos = [];        // lo último que mandó el servidor
+let idsListosAvisados = null;  // ids ya avisados (null = primera carga: no vibra)
+let ultimoTextoListos = '';    // para no redibujar la franja si no cambió
+
 // Actualización automática
 let temporizador = null;    // el setTimeout de la próxima actualización
 let actualizando = false;   // true mientras hay una petición en curso
@@ -173,6 +185,9 @@ function iniciarPantalla() {
 
   // UN solo "escuchador" para toda la grilla (delegación de eventos)
   grillaMesas.addEventListener('click', alTocarMesa);
+
+  // "Ya lo llevé" en la franja de pedidos listos (delegación)
+  listaListos.addEventListener('click', alTocarListo);
 
   formPersonas.addEventListener('submit', tomarPedido);
   btnAgregar.addEventListener('click', agregarPedido);
@@ -257,8 +272,14 @@ async function actualizar() {
    --------------------------------------------------------- */
 async function cargarMesas() {
   try {
-    const mesas = await obtenerMesas();
+    // Las mesas y los pedidos listos A LA VEZ. Si los listos fallan,
+    // las mesas se muestran igual (por eso el .catch)
+    const [mesas, listos] = await Promise.all([
+      obtenerMesas(),
+      obtenerPedidosListos().catch(() => null)
+    ]);
     mesasActuales = mesas;
+    if (listos !== null) pedidosListos = listos;
 
     // Solo redibujamos si algo cambió: así la pantalla no
     // "parpadea" cada 5 segundos sin motivo.
@@ -268,8 +289,10 @@ async function cargarMesas() {
     if (texto !== ultimoDibujo) {
       dibujarMesas(mesas);
       ultimoDibujo = texto;
+      ultimoTextoListos = null; // tarjetas nuevas: hay que volver a marcarlas
     }
     actualizarAvisoQr(mesas);
+    actualizarListos();
 
     // Si venimos de enviar un pedido, lo mostramos una vez.
     // Se va solo en la próxima actualización (5 s).
@@ -370,6 +393,96 @@ function actualizarAvisoQr(mesas) {
   // Solo cambiamos el texto si es distinto (aria-live lo leería de nuevo)
   if (avisoQr.textContent !== texto) avisoQr.textContent = texto;
   avisoQr.hidden = false;
+}
+
+/* ---------------------------------------------------------
+   PEDIDOS LISTOS PARA LLEVAR (RF-PED-05)
+   - Franja arriba: "Mesa 3 · Pedido #12  [Ya lo llevé]"
+   - Tarjeta de la mesa: "🍽 Listo"
+   - Si llega uno nuevo, el celular vibra (si el navegador lo permite)
+   Se llama en cada actualización (cada 5 s).
+   --------------------------------------------------------- */
+function leerListosVistos() {
+  try {
+    const lista = JSON.parse(localStorage.getItem(CLAVE_LISTOS_VISTOS) || '[]');
+    return new Set(Array.isArray(lista) ? lista : []);
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function guardarListosVistos(vistos) {
+  try {
+    // Solo los últimos 200: la lista no crece para siempre
+    localStorage.setItem(CLAVE_LISTOS_VISTOS, JSON.stringify(Array.from(vistos).slice(-200)));
+  } catch (e) { /* sin lugar o modo privado: el aviso vuelve a aparecer, no pasa nada grave */ }
+}
+
+function actualizarListos() {
+  const vistos = leerListosVistos();
+  const pendientes = pedidosListos.filter(p => !vistos.has(p.id));
+
+  // Vibración solo para los NUEVOS (y no al abrir la pantalla)
+  const nuevos = idsListosAvisados === null
+    ? []
+    : pendientes.filter(p => !idsListosAvisados.has(p.id));
+  if (nuevos.length > 0 && navigator.vibrate) {
+    navigator.vibrate([200, 100, 200]);
+  }
+  idsListosAvisados = new Set(pedidosListos.map(p => p.id));
+
+  // Franja: solo se redibuja si cambió (así no se "pierde" un toque)
+  const texto = pendientes.map(p => p.id).join(',');
+  if (texto !== ultimoTextoListos) {
+    ultimoTextoListos = texto;
+    listaListos.textContent = '';
+    for (const p of pendientes) {
+      const li = document.createElement('li');
+      li.className = 'aviso-listos__item';
+
+      const descripcion = document.createElement('span');
+      descripcion.textContent = 'Mesa ' + p.mesa_numero + ' · Pedido #' + p.id +
+        (p.listo_en ? ' · ' + formatearHora(p.listo_en) : '');
+
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'boton boton--exito aviso-listos__boton';
+      boton.textContent = 'Ya lo llevé';
+      boton.dataset.id = p.id;
+      boton.setAttribute('aria-label', 'Ya llevé el pedido ' + p.id + ' a la mesa ' + p.mesa_numero);
+
+      li.append(descripcion, boton);
+      listaListos.append(li);
+    }
+    avisoListos.hidden = pendientes.length === 0;
+  }
+
+  // Tarjetas: se marcan en cada actualización, porque la grilla
+  // solo se redibuja cuando cambian las mesas
+  const mesasConListo = new Set(pendientes.map(p => p.mesa_id));
+  for (const tarjeta of grillaMesas.querySelectorAll('.mesa')) {
+    const tiene = mesasConListo.has(Number(tarjeta.dataset.id));
+    tarjeta.classList.toggle('mesa--listo', tiene);
+    let etiqueta = tarjeta.querySelector('.mesa__listo');
+    if (tiene && !etiqueta) {
+      etiqueta = document.createElement('span');
+      etiqueta.className = 'mesa__listo';
+      etiqueta.textContent = '🍽 Listo';
+      tarjeta.append(etiqueta);
+    } else if (!tiene && etiqueta) {
+      etiqueta.remove();
+    }
+  }
+}
+
+// "Ya lo llevé": se guarda en este celular y se saca de la franja
+function alTocarListo(evento) {
+  const boton = evento.target.closest('.aviso-listos__boton');
+  if (!boton) return;
+  const vistos = leerListosVistos();
+  vistos.add(Number(boton.dataset.id));
+  guardarListosVistos(vistos);
+  actualizarListos();
 }
 
 /* ---------------------------------------------------------

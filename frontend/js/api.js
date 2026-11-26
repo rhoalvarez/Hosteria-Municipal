@@ -722,6 +722,28 @@ async function aplicarAumentoPrecios(porcentaje, letraCategoria, redondeo) {
 }
 
 /* ---------- PEDIDOS (RF-PED) y COCINA (RF-COC) ---------- */
+
+/* Aviso al mozo (RF-PED-05): pedidos que cocina marcó LISTO, de mesas
+   que siguen abiertas, del más viejo al más nuevo.
+   Devuelve [{ id, mesa_id, mesa_numero, listo_en, mozo }] */
+async function obtenerPedidosListos() {
+  if (!USAR_MOCK) {
+    const filas = await peticion('GET', '/avisos/pedidos-listos');
+    return filas.map(f => ({
+      id: f.id_pedido,
+      mesa_id: f.id_mesa,
+      mesa_numero: f.mesa_numero,
+      listo_en: f.listo,
+      mozo: f.mozo || ''
+    }));
+  }
+
+  await esperar(DEMORA_MOCK);
+  const db = leerMock();
+  return db.pedidos
+    .filter(p => p.estado === 'listo' && db.mesas.some(m => m.id === p.mesa_id && m.estado !== 'libre'))
+    .map(p => ({ id: p.id, mesa_id: p.mesa_id, mesa_numero: p.mesa_numero, listo_en: p.creado_en, mozo: p.mozo_nombre }));
+}
 // Estados de un pedido: pendiente | en_preparacion | listo
 // (los pedidos QR sin confirmar NO están acá: viven en la bandeja,
 //  ver la sección PEDIDO POR QR más abajo)
@@ -1387,6 +1409,7 @@ function adaptarTurno(t) {
   if (!t) return null;
   return {
     id: t.id_turno_caja,
+    turno: aMinuscula(t.turno),       // 'manana' | 'tarde' | 'noche' | '' (turnos viejos)
     estado: aMinuscula(t.estado),
     apertura: t.apertura,
     cierre: t.cierre || null,
@@ -1635,11 +1658,34 @@ async function obtenerTurnoActual() {
   return { abierto: r.abierto === true, turno: adaptarTurno(r.turno) };
 }
 
-// Abre la caja con el efectivo que hay en el cajón. Devuelve { id }
-async function abrirCaja(saldoInicial) {
+/* Turnos de caja (RF-CAJ-10, a confirmar con la hostería).
+   Sin Ñ en el valor ('manana'), como en la base; NOMBRE_TURNO es lo
+   que se muestra. Una sola caja abierta a la vez: cada turno abre y
+   cierra la suya. */
+const TURNOS_CAJA = ['manana', 'tarde', 'noche'];
+const NOMBRE_TURNO = { manana: 'Mañana', tarde: 'Tarde', noche: 'Noche' };
+
+// Turno que corresponde a una hora (propuesta: mañana 6–14, tarde 14–20,
+// noche 20–6). Sirve para que el combo venga elegido; se puede cambiar.
+function turnoSugerido(fecha) {
+  const h = (fecha || new Date()).getHours();
+  if (h >= 6 && h < 14) return 'manana';
+  if (h >= 14 && h < 20) return 'tarde';
+  return 'noche';
+}
+
+// "Turno N° 5 · Mañana" (los turnos viejos no tienen nombre: solo el número)
+function textoTurno(turno) {
+  return 'Turno N° ' + turno.id + (NOMBRE_TURNO[turno.turno] ? ' · ' + NOMBRE_TURNO[turno.turno] : '');
+}
+
+// Abre la caja con el efectivo que hay en el cajón y el turno. Devuelve { id }
+async function abrirCaja(saldoInicial, turno) {
   if (USAR_MOCK) cajaSoloBackendReal();
   const saldo = validarImporte(saldoInicial, 'Saldo inicial', false);
-  const r = await peticion('POST', '/caja/turnos/apertura', { saldo_inicial: saldo });
+  const t = aMinuscula(String(turno || '').trim());
+  if (!TURNOS_CAJA.includes(t)) throw errorApi('Elegí el turno: mañana, tarde o noche', 400);
+  const r = await peticion('POST', '/caja/turnos/apertura', { saldo_inicial: saldo, turno: t.toUpperCase() });
   return { id: r.id_turno_caja };
 }
 
@@ -1901,6 +1947,33 @@ async function obtenerRankingPlatos(desde, hasta, letraCategoria) {
     '&hasta=' + encodeURIComponent(hasta) +
     '&categoria=' + idCategoria);
   return filas.map(adaptarPlatoVendido);
+}
+
+/* Ventas por mozo y comensales (RF-EST-05).
+   Devuelve [{ mozo, mesas, comensales, total, promedio_mesa,
+               promedio_persona, cantidad_sin_cargo, valor_sin_cargo }],
+   del que más vendió al que menos. Los promedios se calculan acá
+   (si un mozo solo tuvo mesas sin cargo, quedan en 0, sin dividir por 0). */
+async function obtenerVentasMozos(desde, hasta) {
+  if (USAR_MOCK) estSoloBackendReal();
+  validarPeriodoEst(desde, hasta);
+  const filas = await peticion('GET', '/estadisticas/mozos' +
+    '?desde=' + encodeURIComponent(desde) + '&hasta=' + encodeURIComponent(hasta));
+  return filas.map(f => {
+    const mesas = Number(f.mesas_cobradas || 0);
+    const comensales = Number(f.comensales || 0);
+    const total = aImporte(f.total_vendido);
+    return {
+      mozo: f.mozo,
+      mesas,
+      comensales,
+      total,
+      promedio_mesa: mesas > 0 ? Math.round(total / mesas) : 0,
+      promedio_persona: comensales > 0 ? Math.round(total / comensales) : 0,
+      cantidad_sin_cargo: Number(f.cantidad_sin_cargo || 0),
+      valor_sin_cargo: aImporte(f.valor_sin_cargo)
+    };
+  });
 }
 
 /* Ingresos por semana o por mes, por forma de pago (RF-EST-02).

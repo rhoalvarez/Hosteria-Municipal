@@ -41,6 +41,7 @@
       <span class="leyenda__item"><span class="leyenda__color leyenda__color--ocupada"></span>Ocupada</span>
       <span class="leyenda__item"><span class="leyenda__color leyenda__color--cuenta"></span>Cuenta pedida</span>
       <span class="leyenda__item">📱 Pedido por QR</span>
+      <span class="leyenda__item">🍽 Pedido listo</span>
     </div>
 
     <!-- Mensajes para el usuario: "Cargando...", errores de conexión -->
@@ -48,6 +49,13 @@
 
     <!-- Franja de pedidos QR esperando al mozo (Inc. 2). La llena mesas.js -->
     <p id="aviso-qr" class="aviso-qr" role="status" aria-live="polite" hidden></p>
+
+    <!-- Pedidos LISTOS para llevar a la mesa (RF-PED-05). La llena mesas.js.
+         "Ya lo llevé" lo saca de ESTE celular (no cambia nada en la base) -->
+    <div id="aviso-listos" class="aviso-listos" role="status" aria-live="polite" hidden>
+      <strong class="aviso-listos__titulo">🍽 Listo para llevar</strong>
+      <ul id="lista-listos" class="aviso-listos__lista"></ul>
+    </div>
 
     <!-- Acá mesas.js dibuja una tarjeta por cada mesa -->
     <div id="grilla-mesas" class="grilla-mesas"></div>

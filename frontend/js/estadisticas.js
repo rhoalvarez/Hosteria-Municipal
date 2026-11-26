@@ -7,6 +7,7 @@
    - Ranking de platos más vendidos, con filtro por categoría (RF-EST-01)
    - Gráficos de barras propios, sin librerías (RF-EST-03)
    - Exportar a CSV para abrir con Excel (RF-EST-04)
+   - Ventas por mozo y comensales (RF-EST-05)
 
    Qué cuenta (lo decide la BASE, 95_estadisticas.sql):
    solo las mesas COBRADAS, por la fecha del cobro. Los ítems
@@ -60,10 +61,18 @@ const graficoPlatos = document.getElementById('grafico-platos');
 const btnCsvPlatos = document.getElementById('btn-csv-platos');
 const plantillaPlato = document.getElementById('plantilla-barra-plato');
 
+// Mozos (RF-EST-05)
+const secMozos = document.getElementById('sec-mozos');
+const sinMozos = document.getElementById('sin-mozos');
+const contenedorMozos = document.getElementById('contenedor-mozos');
+const tablaMozos = document.getElementById('tabla-mozos');
+const btnCsvMozos = document.getElementById('btn-csv-mozos');
+
 // Estado de la pantalla
 let rangoActual = null;      // { desde, hasta } que se está mostrando
 let ultimosIngresos = [];    // lo último que se dibujó (para exportar)
 let ultimosPlatos = [];
+let ultimosMozos = [];
 let agruparMostrado = 'semana';
 let categoriaMostrada = '';
 
@@ -74,6 +83,7 @@ let categoriaMostrada = '';
    un filtro con datos de otro. */
 let consultaIngresos = 0;
 let consultaPlatos = 0;
+let consultaMozos = 0;
 
 // 1) Control de rol: las estadísticas son SOLO del encargado.
 //    Al mozo o a cocina, exigirRol los manda a su pantalla.
@@ -111,6 +121,7 @@ async function iniciarPantalla() {
   });
   btnCsvIngresos.addEventListener('click', exportarIngresos);
   btnCsvPlatos.addEventListener('click', exportarPlatos);
+  btnCsvMozos.addEventListener('click', exportarMozos);
 
   await llenarCategorias();
 
@@ -199,11 +210,11 @@ async function verEstadisticas() {
   btnVer.disabled = true;
   mostrarAviso('Cargando estadísticas...');
 
-  // Promise.all: las dos consultas viajan juntas (no una después de la otra)
-  const [okIngresos, okPlatos] = await Promise.all([cargarIngresos(), cargarPlatos()]);
+  // Promise.all: las tres consultas viajan juntas (no una después de la otra)
+  const [okIngresos, okPlatos, okMozos] = await Promise.all([cargarIngresos(), cargarPlatos(), cargarMozos()]);
 
   btnVer.disabled = false;
-  if (okIngresos && okPlatos) ocultarMensaje();
+  if (okIngresos && okPlatos && okMozos) ocultarMensaje();
 }
 
 async function recargarIngresos() {
@@ -374,6 +385,48 @@ function dibujarPlatos(platos) {
 }
 
 /* =========================================================
+   VENTAS POR MOZO Y COMENSALES (RF-EST-05)
+   ========================================================= */
+
+async function cargarMozos() {
+  const numero = ++consultaMozos;
+  try {
+    const mozos = await obtenerVentasMozos(rangoActual.desde, rangoActual.hasta);
+    if (numero !== consultaMozos) return true; // llegó tarde: hay una más nueva
+    ultimosMozos = mozos;
+    dibujarMozos(mozos);
+    return true;
+  } catch (error) {
+    if (numero !== consultaMozos) return true;
+    manejarError(error, mostrarError);
+    return false;
+  }
+}
+
+// Ya vienen ordenados del que más vendió al que menos (lo ordena la base)
+function dibujarMozos(mozos) {
+  secMozos.hidden = false;
+  tablaMozos.textContent = '';
+  sinMozos.hidden = mozos.length > 0;
+  contenedorMozos.hidden = mozos.length === 0;
+  btnCsvMozos.disabled = mozos.length === 0;
+
+  for (const m of mozos) {
+    const fila = document.createElement('tr');
+    agregarCelda(fila, m.mozo);
+    agregarCelda(fila, String(m.mesas), 'caja-num');
+    agregarCelda(fila, String(m.comensales), 'caja-num');
+    agregarCelda(fila, formatoPesos(m.total), 'caja-num');
+    agregarCelda(fila, formatoPesos(m.promedio_mesa), 'caja-num');
+    agregarCelda(fila, formatoPesos(m.promedio_persona), 'caja-num');
+    agregarCelda(fila, m.cantidad_sin_cargo > 0
+      ? m.cantidad_sin_cargo + ' (' + formatoPesos(m.valor_sin_cargo) + ')'
+      : '—', 'caja-num');
+    tablaMozos.append(fila);
+  }
+}
+
+/* =========================================================
    EXPORTAR A CSV (RF-EST-04)
    El archivo se arma en el navegador: no necesita internet ni
    ninguna librería. Se abre con Excel.
@@ -405,6 +458,17 @@ function exportarPlatos() {
   ]);
   const sufijo = categoriaMostrada ? '_categoria_' + categoriaMostrada : '';
   descargarCsv('platos_' + rangoActual.desde + '_a_' + rangoActual.hasta + sufijo + '.csv', encabezados, filas);
+}
+
+function exportarMozos() {
+  if (!rangoActual || ultimosMozos.length === 0) return;
+  const encabezados = ['Mozo', 'Mesas cobradas', 'Comensales', 'Total vendido',
+                       'Promedio por mesa', 'Promedio por persona', 'Mesas sin cargo', 'Valor sin cargo'];
+  const filas = ultimosMozos.map(m => [
+    m.mozo, m.mesas, m.comensales, m.total, m.promedio_mesa, m.promedio_persona,
+    m.cantidad_sin_cargo, m.valor_sin_cargo
+  ]);
+  descargarCsv('mozos_' + rangoActual.desde + '_a_' + rangoActual.hasta + '.csv', encabezados, filas);
 }
 
 /* descargarCsv y celdaCsv están en formato.js: las comparten

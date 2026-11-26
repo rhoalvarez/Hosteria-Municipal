@@ -15,6 +15,7 @@ const cashRoutes = require("./routes/cash.routes");
 const statsRoutes = require("./routes/stats.routes");
 const lodgingRoutes = require("./routes/lodging.routes");
 const usuariosRoutes = require("./routes/usuarios.routes");
+const avisosRoutes = require("./routes/avisos.routes");
 
 const errorHandler = require("./middlewares/errorHandler");
 
@@ -70,6 +71,8 @@ app.use("/api", restaurantRoutes);
 app.use("/api/caja", cashRoutes);
 // Estadísticas (Inc. 3): ranking de platos e ingresos, solo ENCARGADO
 app.use("/api/estadisticas", statsRoutes);
+// Avisos para el mozo (RF-PED-05): pedidos listos para llevar
+app.use("/api/avisos", avisosRoutes);
 app.use("/api", lodgingRoutes);
 
 // Documentación Swagger

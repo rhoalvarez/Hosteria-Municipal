@@ -1209,3 +1209,61 @@ a.boton {
 .item-mesa .anular .panel__acciones {
   margin-top: 8px;
 }
+
+/* =========================================================
+   PEDIDOS LISTOS PARA LLEVAR (RF-PED-05) — pantalla de Mesas
+   Franja verde arriba de la grilla + etiqueta en la tarjeta.
+   Verde = listo, igual que en cocina. Texto Y color.
+   ========================================================= */
+.aviso-listos {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #e8eddd;
+  border-left: 4px solid var(--color-exito, #55692f);
+  border-radius: var(--radio, 10px);
+}
+
+.aviso-listos__titulo {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-exito, #55692f);
+}
+
+.aviso-listos__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* "Mesa 3 · Pedido #12 · 21:15   [Ya lo llevé]" */
+.aviso-listos__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  font-weight: 600;
+}
+
+.aviso-listos__boton {
+  min-height: 40px;
+  padding: 6px 14px;
+}
+
+/* Tarjeta de la mesa con un pedido listo: borde verde por fuera */
+.mesa--listo {
+  box-shadow: 0 0 0 3px var(--color-exito, #55692f);
+}
+
+.mesa__listo {
+  margin-top: 4px;
+  padding: 0 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-exito, #55692f);
+  border-radius: 999px;
+}

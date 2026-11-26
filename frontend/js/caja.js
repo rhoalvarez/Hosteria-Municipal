@@ -43,6 +43,7 @@ const vistaAbierta = document.getElementById('vista-abierta');
 // Caja cerrada
 const formAbrir = document.getElementById('form-abrir');
 const inputSaldoInicial = document.getElementById('input-saldo-inicial');
+const inputTurno = document.getElementById('input-turno');
 const sugerenciaSaldo = document.getElementById('sugerencia-saldo');
 const errorAbrir = document.getElementById('error-abrir');
 const btnAbrir = document.getElementById('btn-abrir');
@@ -338,6 +339,8 @@ function mostrarCerrada(ultimo) {
   // actualización (si no, le saltaría el cursor mientras escribe)
   if (vistaActual !== 'cerrada') {
     vistaActual = 'cerrada';
+    // El turno viene elegido según la hora (turnoSugerido, api.js)
+    inputTurno.value = turnoSugerido();
     inputSaldoInicial.focus();
   }
 }
@@ -360,7 +363,7 @@ function dibujarUltimoCierre(turno) {
 
 // "Turno N° 3 · cerrado el 26/11 20:00 por Encargado"
 function textoCierre(turno) {
-  return 'Turno N° ' + turno.id + ' · cerrado el ' + fechaHora(turno.cierre) +
+  return textoTurno(turno) + ' · cerrado el ' + fechaHora(turno.cierre) +
     (turno.usuario_cierre ? ' por ' + turno.usuario_cierre : '');
 }
 
@@ -435,9 +438,9 @@ async function abrirTurno(evento) {
   try {
     // abrirCaja valida el importe (api.js) y la base controla
     // que no haya otro turno abierto
-    await abrirCaja(inputSaldoInicial.value);
+    await abrirCaja(inputSaldoInicial.value, inputTurno.value);
     inputSaldoInicial.value = '';
-    avisoPendiente = 'Caja abierta ✔';
+    avisoPendiente = 'Caja abierta ✔ Turno ' + (NOMBRE_TURNO[inputTurno.value] || '');
     ultimoDibujo = ''; // que se redibuje sí o sí
     await actualizar();
     refrescarHistorial();
@@ -531,7 +534,7 @@ function mostrarAbierta(turno, movimientos) {
   vistaAbierta.hidden = false;
   vistaActual = 'abierta';
 
-  turnoInfo.textContent = 'Turno N° ' + turno.id + ' · abierto el ' +
+  turnoInfo.textContent = textoTurno(turno) + ' · abierto el ' +
     fechaHora(turno.apertura) + ' por ' + turno.usuario_apertura;
 
   // Efectivo: lo único que se cuenta al cerrar
@@ -677,7 +680,7 @@ function dibujarHistorial(turnos) {
     const cerrado = t.estado === 'cerrado';
     const fila = document.createElement('tr');
 
-    agregarCelda(fila, 'N° ' + t.id);
+    agregarCelda(fila, 'N° ' + t.id + (NOMBRE_TURNO[t.turno] ? ' · ' + NOMBRE_TURNO[t.turno] : ''));
     agregarCelda(fila, fechaHora(t.apertura));
     agregarCelda(fila, cerrado ? fechaHora(t.cierre) : '—');
     agregarCelda(fila, formatoPesos(t.saldo_inicial), 'caja-num');
@@ -722,7 +725,7 @@ async function verTurno(idTurno) {
   numeroDetalle++;
   const esteDetalle = numeroDetalle;
 
-  tituloTurno.textContent = 'Turno N° ' + idTurno;
+  tituloTurno.textContent = 'Turno N° ' + idTurno; // con el nombre del turno cuando llegan los datos
   turnoDetalleInfo.textContent = 'Cargando…';
   turnoDetalleDatos.textContent = '';
   turnoDetalleMovimientos.textContent = '';
@@ -740,6 +743,7 @@ async function verTurno(idTurno) {
     ]);
     if (esteDetalle !== numeroDetalle) return; // llegó tarde: se descarta
 
+    tituloTurno.textContent = textoTurno(turno);
     turnoDetalleInfo.textContent = 'Abierto el ' + fechaHora(turno.apertura) +
       (turno.usuario_apertura ? ' por ' + turno.usuario_apertura : '') +
       (turno.estado === 'cerrado'
@@ -1011,7 +1015,8 @@ function exportarMovimientos(turno, movimientos) {
   // "caja_turno_4_2026-11-26.csv" (fecha LOCAL de apertura: fechaATexto, de api.js)
   const apertura = new Date(turno.apertura);
   const dia = isNaN(apertura) ? '' : '_' + fechaATexto(apertura);
-  descargarCsv('caja_turno_' + turno.id + dia + '.csv', encabezados, filas);
+  const nombreTurno = turno.turno ? '_' + turno.turno : '';
+  descargarCsv('caja_turno_' + turno.id + nombreTurno + dia + '.csv', encabezados, filas);
 }
 
 /* =========================================================
