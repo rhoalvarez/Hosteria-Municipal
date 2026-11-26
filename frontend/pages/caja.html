@@ -359,6 +359,24 @@
     </section>
   </div>
 
+  <!-- =====================================================
+       PANEL: FOTO DEL COMPROBANTE DE TRANSFERENCIA (RF-CAJ-13/14)
+       Va al final: se puede abrir encima del detalle de un turno.
+       ===================================================== -->
+  <div id="panel-comprobante" class="panel-fondo" hidden>
+    <section class="panel panel--ancho" role="dialog" aria-modal="true" aria-labelledby="titulo-comprobante">
+      <h2 id="titulo-comprobante" class="panel__titulo">Comprobante de transferencia</h2>
+      <!-- "Cobro comanda 12 · Mercado Pago · $ 8.000" -->
+      <p id="comprobante-info" class="caja-ayuda"></p>
+      <p id="comprobante-cargando" class="mensaje">Cargando foto...</p>
+      <p id="error-comprobante" class="mensaje mensaje--error" role="alert" hidden></p>
+      <img id="foto-comprobante" class="caja-foto-comprobante" alt="Foto del comprobante de transferencia" hidden>
+      <div class="panel__acciones">
+        <button type="button" id="btn-cerrar-comprobante" class="boton boton--secundario">Cerrar</button>
+      </div>
+    </section>
+  </div>
+
   <!-- El orden importa: api.js usa funciones de sesion.js,
        y caja.js usa funciones de sesion.js, api.js y formato.js -->
   <script src="../js/sesion.js"></script>

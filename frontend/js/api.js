@@ -1267,7 +1267,11 @@ async function descartarPedidoQr(idPedidoQr) {
 
 // Las mismas reglas que el backend (cash.controller.js)
 const MAX_PAGOS = 4;
+// Formas de los movimientos MANUALES de caja (gastos, proveedores)
 const FORMAS_PAGO = ['efectivo', 'transferencia'];
+// Formas para COBRAR una mesa: además, cargo a habitación (RF-HAB).
+// El cargo no entra a la caja: lo cobra recepción cuando el huésped se va.
+const FORMAS_COBRO = ['efectivo', 'transferencia', 'cargo_habitacion'];
 // Medios para el combo de transferencia (a confirmar con la hostería)
 const MEDIOS_TRANSFERENCIA = ['BNA+', 'Mercado Pago', 'Naranja X', 'Otro'];
 const IMPORTE_MAXIMO = 99999999; // DECIMAL(10,2) de la base
@@ -1365,6 +1369,7 @@ function adaptarMovimiento(m) {
     egreso: aImporte(m.egreso),
     saldo: aImporte(m.saldo),
     es_cobro: m.id_cobro !== null && m.id_cobro !== undefined, // lo generó un cobro de mesa
+    comprobante: m.comprobante || '',  // nombre de la foto del comprobante ('' = sin foto)
     usuario: m.usuario || ''
   };
 }
@@ -1399,12 +1404,18 @@ async function obtenerCuentaMesa(idMesa) {
 }
 
 /* Copia SOLO los campos permitidos de cada pago y los ordena.
-   pagos = [{ forma: 'efectivo' | 'transferencia', importe, medio }] */
+   pagos = [{ forma: 'efectivo' | 'transferencia' | 'cargo_habitacion',
+              importe, medio, id_estadia, comprobante }]
+   - medio:       solo transferencia (BNA+, Mercado Pago...)
+   - comprobante: solo transferencia, nombre de la foto ya subida (opcional)
+   - id_estadia:  solo cargo a habitación (qué huésped) */
 function limpiarPagos(pagos) {
   return (Array.isArray(pagos) ? pagos : []).map(p => ({
     forma: aMinuscula(String(p.forma || '').trim()),
     importe: p.importe,
-    medio: String(p.medio || '').trim()
+    medio: String(p.medio || '').trim(),
+    id_estadia: Number(p.id_estadia) || 0,
+    comprobante: String(p.comprobante || '').trim()
   }));
 }
 
@@ -1423,12 +1434,15 @@ function validarCobro(total, pagos, sinCargo, motivo) {
   }
   pagos.forEach((p, i) => {
     const nombre = 'Pago ' + (i + 1);
-    if (!FORMAS_PAGO.includes(p.forma)) {
+    if (!FORMAS_COBRO.includes(p.forma)) {
       throw errorApi(nombre + ': forma de pago no permitida', 400);
     }
     p.importe = validarImporte(p.importe, nombre, true);
     if (p.forma === 'transferencia' && !p.medio) {
       throw errorApi(nombre + ': indicá el medio de la transferencia', 400);
+    }
+    if (p.forma === 'cargo_habitacion' && !(p.id_estadia > 0)) {
+      throw errorApi(nombre + ': elegí la habitación del huésped', 400);
     }
   });
   const suma = pagos.reduce((s, p) => s + aCentavos(p.importe), 0);
@@ -1465,10 +1479,13 @@ async function cobrarComanda(idComanda, datos) {
 
   const r = await peticion('POST', '/caja/comandas/' + idComanda + '/cobros', {
     total,
+    // Nunca null: '' y 0 (el backend y la base esperan eso)
     pagos: pagos.map(p => ({
       forma: p.forma.toUpperCase(),
       importe: p.importe,
-      medio_transferencia: p.forma === 'transferencia' ? p.medio : ''
+      medio_transferencia: p.forma === 'transferencia' ? p.medio : '',
+      comprobante: p.forma === 'transferencia' ? p.comprobante : '',
+      id_estadia: p.forma === 'cargo_habitacion' ? p.id_estadia : 0
     })),
     sin_cargo: sinCargo,
     motivo_sin_cargo: sinCargo ? motivo : ''
@@ -1479,6 +1496,71 @@ async function cobrarComanda(idComanda, datos) {
     numero_comanda: r.numero_comanda,
     total: aImporte(r.total)
   };
+}
+
+/* ---------- CARGO A HABITACIÓN (RF-HAB) ---------- */
+
+/* Huéspedes alojados ahora, para el combo del cobro.
+   Devuelve [{ id, habitacion, huesped }] ordenados por habitación.
+   Hoy salen de huéspedes de PRUEBA (65_huespedes_prueba.sql): cuando
+   se conecte con el sistema de reservas, el backend los va a leer de
+   sus tablas y esta función no cambia. */
+async function obtenerEstadiasActivas() {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const filas = await peticion('GET', '/caja/estadias-activas');
+  return filas.map(e => ({
+    id: e.id_estadia,
+    habitacion: e.nro_habitacion,
+    huesped: (e.apellido || '') + (e.nombre ? ', ' + e.nombre : '')
+  }));
+}
+
+/* ---------- FOTO DEL COMPROBANTE (RF-CAJ-13/14) ---------- */
+
+/* Sube la foto YA ACHICADA (texto "data:image/jpeg;base64,...").
+   Devuelve el nombre con el que la guardó el servidor; ese nombre se
+   manda después con el cobro (pago.comprobante). */
+async function subirComprobante(imagenDataUrl) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+  const r = await peticion('POST', '/caja/comprobantes', { imagen: imagenDataUrl });
+  return r.archivo;
+}
+
+/* Trae la foto de un comprobante para mostrarla en la caja.
+   No sirve un <img src="/api/..."> común: la ruta pide el token (es
+   un dato privado) y un <img> no lo puede mandar. Por eso la pedimos
+   con fetch + token y la devolvemos como texto "data:image/...",
+   que sí se puede poner en un <img>. */
+async function obtenerFotoComprobante(archivo) {
+  if (USAR_MOCK) cajaSoloBackendReal();
+
+  const sesion = sesionActual();
+  let respuesta;
+  try {
+    respuesta = await fetch(API_URL + '/caja/comprobantes/' + encodeURIComponent(archivo), {
+      headers: sesion && sesion.token ? { Authorization: 'Bearer ' + sesion.token } : {}
+    });
+  } catch (e) {
+    throw errorApi('No se pudo conectar con el servidor. Revisá que estés conectado al wifi de la hostería.', 0);
+  }
+
+  if (!respuesta.ok) {
+    let mensaje = 'No se pudo abrir la foto (' + respuesta.status + ')';
+    try {
+      const datos = await respuesta.json();
+      if (datos && datos.error) mensaje = datos.error;
+    } catch (e) { /* sin cuerpo JSON */ }
+    throw errorApi(mensaje, respuesta.status);
+  }
+
+  const blob = await respuesta.blob();
+  // FileReader convierte el archivo en texto "data:image/jpeg;base64,..."
+  return new Promise((resolver, rechazar) => {
+    const lector = new FileReader();
+    lector.onload = () => resolver(lector.result);
+    lector.onerror = () => rechazar(errorApi('No se pudo leer la foto', 0));
+    lector.readAsDataURL(blob);
+  });
 }
 
 /* ---------- TURNO DE CAJA (RF-CAJ-01/02/08/09) ---------- */

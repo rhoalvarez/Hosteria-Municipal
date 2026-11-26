@@ -12,7 +12,9 @@
    - Siempre      → historial de turnos (se carga con un botón)
                     y detalle de cada turno (solo lectura).
    - Exportar a CSV los movimientos del turno abierto o de un
-     turno del historial (RF-CAJ-12). Las funciones descargarCsv
+     turno del historial (RF-CAJ-12).
+   - Ver la foto del comprobante de cada transferencia cobrada
+     (RF-CAJ-13/14), o el aviso "Sin comprobante". Las funciones descargarCsv
      y celdaCsv están en formato.js (las comparte con Estadísticas).
    Los cobros de las mesas se hacen desde Mesas (botón Cobrar).
    Las cuentas de la caja las hace la BASE (vista v_caja_resumen):
@@ -117,6 +119,14 @@ const turnoSinMovimientos = document.getElementById('turno-sin-movimientos');
 const turnoDetalleMovimientos = document.getElementById('turno-detalle-movimientos');
 const btnCsvTurno = document.getElementById('btn-csv-turno');
 
+// Panel de la foto del comprobante
+const panelComprobante = document.getElementById('panel-comprobante');
+const comprobanteInfo = document.getElementById('comprobante-info');
+const comprobanteCargando = document.getElementById('comprobante-cargando');
+const errorComprobante = document.getElementById('error-comprobante');
+const fotoComprobante = document.getElementById('foto-comprobante');
+const btnCerrarComprobante = document.getElementById('btn-cerrar-comprobante');
+
 // Estado de la pantalla
 let turnoActual = null;        // el turno abierto (null si la caja está cerrada)
 let ultimoTurnoCerrado = null; // el que se muestra en "Último cierre" (el que se puede reabrir)
@@ -138,6 +148,7 @@ let numeroDetalle = 0;         // para descartar respuestas viejas del panel de 
 // así el archivo tiene exactamente lo mismo que la tabla en pantalla
 let movimientosAbierto = [];   // movimientos del turno abierto
 let detalleMostrado = null;    // { turno, movimientos } del panel de detalle
+let numeroFoto = 0;            // para descartar una foto que llega tarde
 
 // Actualización automática
 let temporizador = null;
@@ -197,6 +208,21 @@ function iniciarPantalla() {
   btnCsvTurno.addEventListener('click', () => {
     if (detalleMostrado) exportarMovimientos(detalleMostrado.turno, detalleMostrado.movimientos);
   });
+
+  // Foto del comprobante: botones "📎 Ver" de las dos tablas de
+  // movimientos (delegación: los botones se crean al dibujar)
+  for (const tabla of [tablaMovimientos, turnoDetalleMovimientos]) {
+    tabla.addEventListener('click', (evento) => {
+      const boton = evento.target.closest('[data-comprobante]');
+      if (boton) verComprobante(boton.dataset.comprobante, boton.dataset.descripcion);
+    });
+  }
+  // Este panel se cierra SOLO (si estaba abierto encima del detalle
+  // de un turno, el detalle sigue abierto)
+  btnCerrarComprobante.addEventListener('click', cerrarComprobante);
+  panelComprobante.addEventListener('click', (evento) => {
+    if (evento.target === panelComprobante) cerrarComprobante();
+  });
   tablaHistorial.addEventListener('click', (evento) => {
     const boton = evento.target.closest('[data-ver-turno]');
     if (boton) verTurno(Number(boton.dataset.verTurno));
@@ -212,7 +238,10 @@ function iniciarPantalla() {
   }
   // ...o la tecla Escape
   document.addEventListener('keydown', (evento) => {
-    if (evento.key === 'Escape') cerrarPaneles();
+    if (evento.key !== 'Escape') return;
+    // Si está la foto abierta, Escape cierra solo la foto
+    if (!panelComprobante.hidden) cerrarComprobante();
+    else cerrarPaneles();
   });
 
   // Si cambia de pestaña, dejamos de pedir datos; al volver, actualizamos
@@ -558,9 +587,29 @@ function dibujarMovimientos(movimientos, cuerpoTabla, avisoVacio) {
       concepto.append(extra);
     }
 
-    agregarCelda(fila, m.forma === 'transferencia'
+    const celdaForma = agregarCelda(fila, m.forma === 'transferencia'
       ? 'Transferencia' + (m.medio ? ' (' + m.medio + ')' : '')
       : 'Efectivo');
+
+    // Transferencias cobradas en una mesa: foto del comprobante o aviso
+    if (m.forma === 'transferencia' && m.es_cobro) {
+      if (m.comprobante) {
+        const boton = document.createElement('button');
+        boton.type = 'button';
+        boton.className = 'boton boton--secundario caja-boton-comprobante';
+        boton.textContent = '📎 Ver';
+        boton.dataset.comprobante = m.comprobante;
+        boton.dataset.descripcion = m.concepto + ' · ' + (m.medio || 'Transferencia') +
+          ' · ' + formatoPesos(m.ingreso);
+        boton.setAttribute('aria-label', 'Ver comprobante de ' + m.concepto);
+        celdaForma.append(boton);
+      } else {
+        const aviso = document.createElement('span');
+        aviso.className = 'caja-sin-comprobante';
+        aviso.textContent = 'Sin comprobante';
+        celdaForma.append(aviso);
+      }
+    }
     agregarCelda(fila, m.ingreso > 0 ? formatoPesos(m.ingreso) : '', 'caja-num');
     agregarCelda(fila, m.egreso > 0 ? formatoPesos(m.egreso) : '', 'caja-num caja-egreso');
     agregarCelda(fila, formatoPesos(m.saldo), 'caja-num');
@@ -936,7 +985,7 @@ function exportarMovimientos(turno, movimientos) {
 
   const encabezados = ['Fecha', 'Hora', 'Código', 'Tipo', 'Concepto', 'Forma', 'Medio',
     'Tipo de comprobante', 'N° de comprobante', 'DNI/CUIT', 'Huésped/proveedor',
-    'Detalle', 'Ingreso', 'Egreso', 'Saldo', 'Usuario'];
+    'Detalle', 'Ingreso', 'Egreso', 'Saldo', 'Usuario', 'Foto del comprobante'];
 
   const filas = movimientos.map(m => [
     fechaCorta(m.fecha),
@@ -954,13 +1003,55 @@ function exportarMovimientos(turno, movimientos) {
     m.ingreso,
     m.egreso,
     m.saldo,
-    m.usuario
+    m.usuario,
+    // Solo tiene sentido en transferencias cobradas en una mesa
+    m.forma === 'transferencia' && m.es_cobro ? (m.comprobante ? 'Sí' : 'No') : ''
   ]);
 
   // "caja_turno_4_2026-11-26.csv" (fecha LOCAL de apertura: fechaATexto, de api.js)
   const apertura = new Date(turno.apertura);
   const dia = isNaN(apertura) ? '' : '_' + fechaATexto(apertura);
   descargarCsv('caja_turno_' + turno.id + dia + '.csv', encabezados, filas);
+}
+
+/* =========================================================
+   FOTO DEL COMPROBANTE (RF-CAJ-13/14)
+   obtenerFotoComprobante (api.js) la trae con el token y la
+   devuelve como "data:image/...": así se puede poner en el <img>.
+   ========================================================= */
+async function verComprobante(archivo, descripcion) {
+  numeroFoto++;
+  const estaFoto = numeroFoto;
+
+  comprobanteInfo.textContent = descripcion || '';
+  errorComprobante.hidden = true;
+  fotoComprobante.hidden = true;
+  fotoComprobante.removeAttribute('src');
+  comprobanteCargando.hidden = false;
+  panelComprobante.hidden = false;
+  btnCerrarComprobante.focus();
+
+  try {
+    const imagen = await obtenerFotoComprobante(archivo);
+    if (estaFoto !== numeroFoto) return; // tocó otra foto o cerró: se descarta
+    fotoComprobante.src = imagen;
+    fotoComprobante.hidden = false;
+  } catch (error) {
+    if (estaFoto !== numeroFoto) return;
+    manejarError(error, (texto) => {
+      errorComprobante.textContent = texto;
+      errorComprobante.hidden = false;
+    });
+  } finally {
+    if (estaFoto === numeroFoto) comprobanteCargando.hidden = true;
+  }
+}
+
+function cerrarComprobante() {
+  numeroFoto++; // si la foto estaba cargando, se descarta
+  panelComprobante.hidden = true;
+  fotoComprobante.hidden = true;
+  fotoComprobante.removeAttribute('src');
 }
 
 /* ---------- Paneles ---------- */
@@ -971,6 +1062,7 @@ function cerrarPaneles() {
   panelCierre.hidden = true;
   panelReapertura.hidden = true;
   panelTurno.hidden = true;
+  cerrarComprobante();
   numeroDetalle++; // si el detalle estaba cargando, su respuesta se descarta
   reiniciarBotonCierre();
   reiniciarBotonReapertura();

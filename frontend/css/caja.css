@@ -99,9 +99,60 @@
   text-align: right;
 }
 
-/* El medio de la transferencia ocupa toda la línea de abajo */
-.pago__medio {
+/* El ✕ siempre arriba a la derecha (columna 3, primera fila),
+   aunque en el HTML esté antes que el medio o la foto */
+.pago__quitar {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* Medio de la transferencia, foto del comprobante y habitación:
+   cada uno ocupa toda una línea de abajo */
+.pago__medio,
+.pago__comprobante,
+.pago__estadia {
   grid-column: 1 / -1;
+}
+
+/* ---------- Foto del comprobante (RF-CAJ-13/14) ---------- */
+/* [📷 Foto del comprobante]  ✔ Foto cargada
+   [miniatura]                                  */
+.pago__comprobante {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* El label es el botón; el input de archivo queda escondido adentro
+   (caja-solo-lector), pero sigue funcionando al tocar el label */
+.pago__foto-boton {
+  position: relative;
+  min-height: var(--alto-toque, 48px);
+}
+
+.pago .pago__foto {
+  width: 1px;
+  min-height: 0;
+  height: 1px;
+  padding: 0;
+  border: 0;
+}
+
+.pago__foto-estado {
+  font-size: 0.9rem;
+  color: var(--color-texto-suave, #5b6573);
+}
+
+.pago__foto-estado--ok    { color: var(--color-exito, #55692f); font-weight: 600; }
+.pago__foto-estado--error { color: var(--color-error, #a12800); font-weight: 600; }
+
+/* Miniatura: chica, para confirmar que es la foto correcta */
+.pago__foto-vista {
+  max-height: 120px;
+  width: auto;
+  border: 1px solid var(--color-borde, #d5dae1);
+  border-radius: 6px;
 }
 
 /* Botón para quitar una fila: cuadrado, del alto de un campo */
@@ -154,7 +205,8 @@
 #panel-movimiento [hidden],
 #panel-cierre [hidden],
 #panel-reapertura [hidden],
-#panel-turno [hidden] {
+#panel-turno [hidden],
+#panel-comprobante [hidden] {
   display: none !important;
 }
 
@@ -398,4 +450,37 @@
   .caja-acciones .boton {
     flex: 0 0 auto;          /* en la PC, del tamaño del texto */
   }
+}
+/* =========================================================
+   FOTO DEL COMPROBANTE EN LA CAJA (RF-CAJ-13/14)
+   ========================================================= */
+
+/* Botón chico "📎 Ver" dentro de la celda "Forma" */
+.caja-boton-comprobante {
+  display: inline-flex;
+  min-height: 36px;
+  margin-left: 6px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+/* "Sin comprobante": aviso para el control de transferencias */
+.caja-sin-comprobante {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-error, #a12800);
+}
+
+/* El panel de la foto va por encima del detalle del turno
+   (se puede abrir desde el historial) */
+#panel-comprobante {
+  z-index: 30;
+}
+
+/* La foto entra entera en la pantalla */
+.caja-foto-comprobante {
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto var(--espacio, 16px);
+  border-radius: 6px;
 }
