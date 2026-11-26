@@ -318,6 +318,9 @@ function agruparPedidos(filas) {
 
     if (f.id_item !== null && f.id_item !== undefined) {
       pedido.items.push({
+        // id del RENGLÓN (rest_pedido_item): hace falta para anular
+        // un ítem ya enviado (RF-PED-06). null si el backend no lo manda.
+        id_pedido_item: f.id_pedido_item !== undefined ? f.id_pedido_item : null,
         menu_id: f.id_item,
         codigo: f.codigo || '',
         nombre: f.articulo,
@@ -819,6 +822,48 @@ async function marcarPedidoListo(idPedido) {
   pedido.estado = 'listo';
   guardarMock(db);
   return pedido;
+}
+
+/* Anular un ítem YA ENVIADO a cocina (RF-PED-06).
+   Solo el encargado (el backend responde 403 a los demás).
+   idPedidoItem = id del renglón (item.id_pedido_item de obtenerPedidosMesa)
+   motivo       = obligatorio, de 5 a 255 letras
+
+   No tiene versión mock, igual que la caja: las reglas (comanda
+   abierta, no anular dos veces, recalcular el total y auditar)
+   viven en sp_item_anular (96_anular_item.sql), en UNA transacción.
+
+   Errores que devuelve el backend:
+   400 motivo inválido · 404 el ítem no existe ·
+   409 ya estaba anulado o la mesa ya se cobró.
+   Devuelve { id_pedido_item, id_comanda, total } (total NUEVO de la comanda). */
+const LARGO_MIN_MOTIVO_ANULAR = 5;
+const LARGO_MAX_MOTIVO_ANULAR = 255;
+
+async function anularItem(idPedidoItem, motivo) {
+  if (USAR_MOCK) {
+    throw errorApi('Anular un ítem funciona solo con el backend real: poné USAR_MOCK = false en api.js', 501);
+  }
+
+  const id = Number(idPedidoItem);
+  if (!Number.isInteger(id) || id < 1) {
+    throw errorApi('No se encontró el ítem a anular. Actualizá la pantalla.', 400);
+  }
+
+  const texto = String(motivo || '').trim();
+  if (texto.length < LARGO_MIN_MOTIVO_ANULAR) {
+    throw errorApi('Escribí el motivo (mínimo ' + LARGO_MIN_MOTIVO_ANULAR + ' letras)', 400);
+  }
+  if (texto.length > LARGO_MAX_MOTIVO_ANULAR) {
+    throw errorApi('El motivo puede tener hasta ' + LARGO_MAX_MOTIVO_ANULAR + ' letras', 400);
+  }
+
+  const r = await peticion('PATCH', '/pedidos-items/' + id + '/anular', { motivo: texto });
+  return {
+    id_pedido_item: r.id_pedido_item,
+    id_comanda: r.id_comanda,
+    total: aImporte(r.total)
+  };
 }
 
 /* =========================================================

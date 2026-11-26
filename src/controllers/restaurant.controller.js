@@ -923,3 +923,76 @@ exports.qrResolverAccionAnterior = async (req, res) => {
 
   return exports.qrResolverPedido(req, res);
 };
+
+// =====================================================
+// ANULAR UN ÍTEM YA ENVIADO A COCINA (RF-PED-06)
+// Agregado por Luján (rama anular-item).
+// - Solo el encargado (lo controla la ruta con roles("ENCARGADO")).
+// - Motivo obligatorio: mínimo 5 letras, máximo 255 (lo que entra en
+//   rest_pedido_item.motivo_anulacion).
+// - Todo el trabajo lo hace sp_item_anular (database/96_anular_item.sql)
+//   en UNA transacción: marca anulado = 1, recalcula rest_comanda.total
+//   y guarda el registro en rest_auditoria. Por eso acá NO se llama a
+//   audit(): quedaría registrado dos veces.
+// =====================================================
+
+exports.anularItem = async (req, res) => {
+  const idPedidoItem = validarId(req.params.id, "Ítem inválido.");
+  const motivo = String(req.body?.motivo ?? "").trim();
+
+  // Se valida también acá (no solo en la base) para responder rápido
+  // y con un mensaje claro.
+  if (motivo.length < 5) {
+    throw new HttpError(
+      400,
+      "El motivo es obligatorio (mínimo 5 letras)."
+    );
+  }
+
+  if (motivo.length > 255) {
+    throw new HttpError(
+      400,
+      "El motivo no puede superar los 255 caracteres."
+    );
+  }
+
+  let r;
+
+  try {
+    r = await callProcedure("sp_item_anular", [
+      idPedidoItem,
+      req.user.id_usuario,
+      motivo,
+    ]);
+  } catch (error) {
+    // Los SIGNAL del procedimiento llegan con sqlState '45000'.
+    // Se traducen a códigos HTTP para que la pantalla sepa qué pasó:
+    // 404 = el ítem no existe; 409 = ya estaba anulado o la comanda
+    // ya se cerró/cobró; 400 = cualquier otro dato inválido.
+    if (error.sqlState === "45000") {
+      const texto = error.sqlMessage || error.message;
+      let status = 400;
+
+      if (texto.includes("no existe")) {
+        status = 404;
+      } else if (
+        texto.includes("ya estaba anulado") ||
+        texto.includes("cerrada")
+      ) {
+        status = 409;
+      }
+
+      throw new HttpError(status, texto);
+    }
+
+    throw error;
+  }
+
+  // Los DECIMAL llegan como texto ("12000.00"): se pasan a número.
+  res.json({
+    mensaje: "Ítem anulado.",
+    id_pedido_item: Number(r[0].id_pedido_item),
+    id_comanda: Number(r[0].id_comanda),
+    total: Number(r[0].total),
+  });
+};
