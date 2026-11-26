@@ -1,0 +1,139 @@
+/* =========================================================
+   caja.css — Estilos de la CAJA (Inc. 3)
+   ---------------------------------------------------------
+   Por ahora lo usa mesas.html: la vista de COBRO dentro del
+   panel de la mesa (formas de pago, sin cargo).
+   Después lo va a usar también la pantalla de caja.
+   Se carga DESPUÉS de estilos.css: reusa sus clases (panel,
+   campo, boton, mensaje...) y acá agrega solo lo nuevo.
+   Así no tocamos estilos.css, que ya está probado.
+   Los var() llevan el color de la paleta como respaldo.
+   ========================================================= */
+
+/* ---------- Datos de la comanda ---------- */
+/* "Comanda N° 5 · 3 personas · Mozo: Mozo 1" */
+.cobro-comanda {
+  margin: 0 0 4px;
+  color: var(--color-texto-suave, #5b6573);
+}
+
+/* El total a cobrar más grande que en la vista de pedidos:
+   es el número que el encargado le dice al cliente */
+#vista-cobro .total-mesa {
+  margin-bottom: 16px;
+  font-size: 1.4rem;
+}
+
+/* ---------- Casilla "Sin cargo" ---------- */
+/* Toda la fila se puede tocar (el input está DENTRO del label),
+   y mide lo mismo que un botón: fácil de tocar en el celular */
+.cobro-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--alto-toque, 48px);
+  margin-bottom: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cobro-check input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--color-primario, #3d6570);
+}
+
+/* ---------- Formas de pago ---------- */
+.cobro-pagos {
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--color-borde, #d5dae1);
+  border-radius: var(--radio, 10px);
+}
+
+.cobro-pagos legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+/* Una fila de pago. En el celular:
+     [ Forma      ] [ Importe    ] [✕]
+     [ Medio de la transferencia    ]   ← solo si es transferencia
+   Usamos grid: el medio ocupa toda la segunda línea. */
+.pago {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--color-borde, #d5dae1);
+}
+
+/* Mismo aspecto que los campos de estilos.css (.campo input) */
+.pago select,
+.pago input {
+  width: 100%;
+  min-width: 0;              /* deja que la columna del grid se achique */
+  min-height: var(--alto-toque, 48px);
+  padding: 10px 12px;
+  font: inherit;             /* 16px: en iPhone evita que haga zoom al tocar */
+  color: inherit;
+  background: #fff;
+  border: 1px solid var(--color-borde, #d5dae1);
+  border-radius: var(--radio, 10px);
+}
+
+.pago select:focus,
+.pago input:focus {
+  border-color: var(--color-primario, #3d6570);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(61, 101, 112, 0.25);
+}
+
+/* El importe alineado a la derecha, como en una planilla */
+.pago__importe {
+  text-align: right;
+}
+
+/* El medio de la transferencia ocupa toda la línea de abajo */
+.pago__medio {
+  grid-column: 1 / -1;
+}
+
+/* Botón para quitar una fila: cuadrado, del alto de un campo */
+.pago__quitar {
+  width: var(--alto-toque, 48px);
+  min-height: var(--alto-toque, 48px);
+  font: inherit;
+  font-size: 1.1rem;
+  color: var(--color-error, #a12800);
+  background: transparent;
+  border: 1px solid var(--color-borde, #d5dae1);
+  border-radius: var(--radio, 10px);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.pago__quitar:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Si un elemento tiene "hidden", que NO se vea aunque arriba le
+   hayamos puesto un display (por ejemplo, el select del medio) */
+#vista-cobro [hidden] {
+  display: none !important;
+}
+
+/* ---------- Renglón "Falta / Sobra / Suma justo" ---------- */
+.cobro-resto {
+  margin: 10px 0 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Con texto Y color: el color solo no alcanza (daltonismo) */
+.cobro-resto--falta { color: var(--color-error, #a12800); }
+.cobro-resto--sobra { color: var(--color-error, #a12800); }
+.cobro-resto--ok    { color: var(--color-exito, #55692f); }

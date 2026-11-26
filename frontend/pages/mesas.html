@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="../css/estilos.css">
   <!-- Estilos del pedido por QR (Inc. 2): aviso en la tarjeta y panel del mozo -->
   <link rel="stylesheet" href="../css/qr.css">
+  <!-- Estilos del cobro (Inc. 3): formas de pago, sin cargo -->
+  <link rel="stylesheet" href="../css/caja.css">
   <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
        Cuando tengamos el logo, se cambia por assets/logo.png -->
   <link rel="icon" href="data:,">
@@ -72,7 +74,7 @@
         <p class="total-mesa">Total: <strong id="total-mesa">$ 0</strong></p>
 
         <p id="aviso-cuenta" class="alerta alerta--info" hidden>
-          La cuenta ya fue pedida. El cobro se hace en Caja.
+          La cuenta ya fue pedida. La cobra el encargado.
         </p>
         <p id="error-ocupada" class="mensaje mensaje--error" hidden></p>
 
@@ -83,6 +85,57 @@
         <button type="button" id="btn-pedir-cuenta" class="boton boton--peligro boton--bloque panel__boton-cuenta">
           Pedir cuenta
         </button>
+        <!-- Solo lo ve el ENCARGADO (Inc. 3): mesas.js le saca el hidden.
+             Ocultarlo es solo interfaz: el backend responde 403 a otros roles -->
+        <button type="button" id="btn-cobrar" class="boton boton--exito boton--bloque panel__boton-cuenta" hidden>
+          Cobrar
+        </button>
+      </div>
+
+      <!-- Vista de COBRO (Inc. 3 – RF-CAJ-04/05): solo el encargado.
+           Se muestra en lugar de la vista ocupada al tocar "Cobrar". -->
+      <div id="vista-cobro" hidden>
+        <form id="form-cobro" novalidate>
+          <p id="cargando-cobro" class="mensaje">Cargando cuenta...</p>
+
+          <!-- Se muestra cuando cargó la cuenta y la caja está abierta -->
+          <div id="cobro-contenido" hidden>
+            <!-- "Comanda N° 5 · 3 personas · Mozo: Mozo 1" -->
+            <p id="cobro-comanda" class="cobro-comanda"></p>
+            <p class="total-mesa">Total a cobrar: <strong id="cobro-total">$ 0</strong></p>
+
+            <label class="cobro-check">
+              <input type="checkbox" id="check-sin-cargo">
+              Sin cargo (invita la casa)
+            </label>
+
+            <!-- Formas de pago: mesas.js agrega una fila por pago (máx. 4)
+                 copiando la plantilla de más abajo -->
+            <fieldset id="cobro-pagos" class="cobro-pagos">
+              <legend>Forma de pago</legend>
+              <div id="lista-pagos"></div>
+              <button type="button" id="btn-agregar-pago" class="boton boton--secundario boton--bloque">
+                + Agregar otra forma de pago
+              </button>
+              <!-- "Falta $ 3.000" / "Sobra $ 500" / "✔ Los pagos suman el total" -->
+              <p id="cobro-resto" class="cobro-resto" aria-live="polite"></p>
+            </fieldset>
+
+            <!-- Solo si se marca "Sin cargo" -->
+            <div id="cobro-sin-cargo" class="campo" hidden>
+              <label for="input-motivo">Motivo del sin cargo</label>
+              <textarea id="input-motivo" rows="2" maxlength="255"
+                        placeholder="Ej.: cortesía por demora en la cocina"></textarea>
+            </div>
+          </div>
+
+          <p id="error-cobro" class="mensaje mensaje--error" role="alert" hidden></p>
+
+          <div class="panel__acciones">
+            <button type="button" id="btn-cobro-volver" class="boton boton--secundario">Volver</button>
+            <button type="submit" id="btn-confirmar-cobro" class="boton boton--exito">Cobrar</button>
+          </div>
+        </form>
       </div>
 
       <!-- Vista de PEDIDO POR QR (Inc. 2 – RF-QR-05): el mozo lo revisa
@@ -114,6 +167,27 @@
       </div>
     </section>
   </div>
+
+  <!-- Plantilla de UNA fila de pago. <template> no se muestra:
+       mesas.js la copia (cloneNode) cada vez que se agrega un pago.
+       Así no armamos HTML con texto (innerHTML) en el JavaScript.
+       Como puede haber varias filas, no usamos id: cada campo lleva
+       aria-label para que el lector de pantalla diga qué es. -->
+  <template id="plantilla-pago">
+    <div class="pago">
+      <select class="pago__forma" aria-label="Forma de pago">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transferencia</option>
+      </select>
+      <input class="pago__importe" type="number" inputmode="decimal" min="0" step="0.01"
+             aria-label="Importe">
+      <!-- Solo para transferencia: mesas.js le carga los medios -->
+      <select class="pago__medio" aria-label="Medio de la transferencia" hidden>
+        <option value="">Elegí el medio</option>
+      </select>
+      <button type="button" class="pago__quitar" aria-label="Quitar este pago">✕</button>
+    </div>
+  </template>
 
   <!-- El orden importa: api.js usa funciones de sesion.js,
        y mesas.js usa funciones de sesion.js, api.js y formato.js -->
