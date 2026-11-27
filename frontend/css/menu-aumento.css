@@ -49,7 +49,7 @@
   top: 0;
   font-size: 0.85rem;
   color: var(--color-texto-suave, #5b6573);
-  background: #f4f6f8;
+  background: #f7efe3; /* crema un poco más oscuro (26/11; antes gris frío) */
 }
 
 /* Números a la derecha, como en una planilla */
@@ -76,4 +76,42 @@
 #btn-aplicar-aumento.menu-boton--confirmando {
   background: var(--logo-amarillo, #edcc3b);
   color: #2b2b2b;
+}
+
+/* =========================================================
+   MEJORAS VISUALES (26/11) — pantalla del menú
+   Este archivo solo lo carga menu.html, así que lo que va acá
+   no cambia ninguna otra pantalla. No se cambió ninguna clase
+   ni id que use menu.js.
+   ========================================================= */
+
+/* "Dar de baja" en cada plato: borde rojo y fondo blanco en vez
+   de relleno rojo. Con 8 platos había 8 botones rojos fuertes
+   compitiendo; así se destaca el plato y el botón sigue diciendo
+   "cuidado" con su color. (Mismo criterio que "Anular" en mesas.) */
+.menu-plato__acciones .boton--peligro {
+  color: var(--color-error, #a12800);
+  background: #fff;
+  border: 1.5px solid var(--color-error, #a12800);
+}
+
+@media (hover: hover) {
+  .menu-plato__acciones .boton--peligro:hover:not(:disabled) {
+    color: #fff;
+    background: var(--color-error, #a12800);
+  }
+}
+
+/* El primer toque de "Dar de baja" (amarillo) le sigue ganando:
+   este selector es más específico que el de arriba */
+.menu-plato__acciones .boton--peligro.menu-boton--confirmando {
+  color: #2b2b2b;
+  background: var(--logo-amarillo, #edcc3b);
+  border-color: var(--logo-amarillo, #edcc3b);
+}
+
+/* Título de cada categoría ("A · Comidas") con una línea amarilla */
+.menu-grupo__titulo {
+  border-bottom-color: var(--logo-amarillo, #edcc3b);
+  border-bottom-width: 3px;
 }
