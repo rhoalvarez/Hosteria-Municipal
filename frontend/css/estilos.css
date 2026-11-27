@@ -1439,10 +1439,11 @@ h3 {
   }
 }
 
-/* En Mesas, los enlaces con id solo los muestra el JS al encargado.
-   Si no hay ninguno visible (es el mozo), la barra entera no se muestra:
-   así el mozo no ve una barra con un solo botón "Mesas". */
-.nav-encargado:not(:has(a[id]:not([hidden]))) {
+/* Si en la barra la ÚNICA pestaña visible es la pantalla actual, la
+   barra no sirve y no se muestra. Pasa en Mesas con el MOZO: los otros
+   enlaces los muestra el JS solo al encargado. Así el mozo no ve una
+   barra con un solo botón "Mesas". */
+.nav-encargado:not(:has(a:not([hidden]):not([aria-current]))) {
   display: none;
 }
 

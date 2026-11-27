@@ -91,7 +91,7 @@
 .pago input:focus {
   border-color: var(--color-primario, #3d6570);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(61, 101, 112, 0.25);
+  box-shadow: 0 0 0 3px rgba(122, 31, 61, 0.22); /* vino transparente (26/11) */
 }
 
 /* El importe alineado a la derecha, como en una planilla */
@@ -330,7 +330,7 @@
 .caja-tabla th {
   font-size: 0.85rem;
   color: var(--color-texto-suave, #5b6573);
-  background: #f4f6f8;
+  background: #f7efe3; /* crema un poco más oscuro (26/11; antes gris frío) */
 }
 
 /* El concepto puede ser largo: ese sí puede bajar de renglón */
@@ -483,4 +483,45 @@
   max-height: 70vh;
   margin: 0 auto var(--espacio, 16px);
   border-radius: 6px;
+}
+
+/* =========================================================
+   MEJORAS VISUALES (26/11)
+   Solo aspecto: no cambia ninguna clase ni id que use caja.js.
+   ========================================================= */
+
+/* Si no hay movimientos, no mostramos la tabla vacía (solo los
+   títulos de las columnas se veían raros). El "+" de CSS significa
+   "el elemento que viene justo después": cuando el aviso
+   #sin-movimientos está visible, la tabla de al lado se oculta.
+   Lo mismo en el detalle de un turno del historial. */
+#sin-movimientos:not([hidden]) + .caja-tabla-contenedor,
+#turno-sin-movimientos:not([hidden]) + .caja-tabla-contenedor {
+  display: none;
+}
+
+/* "Exportar movimientos (CSV)": separado de la tabla */
+#btn-csv-movimientos {
+  margin-top: 12px;
+}
+
+/* Cifras del resumen en vino oscuro, más grandes */
+.caja-cifra__valor {
+  font-size: 1.6rem;
+  color: var(--color-titulo, #5c1530);
+}
+
+/* "Efectivo en caja" (lo que se cuenta al cerrar): fondo amarillo
+   suave además del borde, para que se note que es el importante */
+.caja-cifra--destacada {
+  background: #fdf6dc;
+  border-left-color: var(--logo-amarillo, #edcc3b);
+  border-left-width: 6px;
+}
+
+/* Filas de las tablas: un tono al pasar el mouse (PC) */
+@media (hover: hover) {
+  .caja-tabla tbody tr:hover {
+    background: #fbf5ec;
+  }
 }
