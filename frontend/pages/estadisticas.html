@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#3D6570">
+  <meta name="theme-color" content="#7A1F3D">
   <title>Estadísticas · Portal de la Luna</title>
   <link rel="stylesheet" href="../css/estilos.css">
   <!-- Reusamos de la caja: tarjetas de cifras, tabla, subtítulos -->
   <link rel="stylesheet" href="../css/caja.css">
   <!-- Estilos propios: filtros y gráficos de barras (Inc. 3) -->
   <link rel="stylesheet" href="../css/estadisticas.css">
-  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola -->
-  <link rel="icon" href="data:,">
+  <!-- Ícono de la pestaña: el logo de la Municipalidad -->
+  <link rel="icon" href="../assets/logo.png">
 </head>
 <body>
   <header class="encabezado">
@@ -20,11 +20,19 @@
       <span id="nombre-usuario" class="encabezado__usuario"></span>
     </div>
     <div class="encabezado__acciones">
-      <!-- Enlaces (<a>) y no botones porque llevan a otra página -->
-      <a href="mesas.html" class="boton boton--secundario">Mesas</a>
-      <a href="caja.html" class="boton boton--secundario">Caja</a>
       <button id="btn-salir" class="boton boton--secundario">Salir</button>
     </div>
+
+    <!-- Barra de navegación del encargado (mejoras visuales 26/11):
+         la misma en todas sus pantallas. Enlaces (<a>) y no botones
+         porque llevan a otra página. La actual va con aria-current. -->
+    <nav class="nav-encargado" aria-label="Pantallas del encargado">
+      <a href="mesas.html" class="nav-encargado__enlace">Mesas</a>
+      <a href="menu.html" class="nav-encargado__enlace">Menú</a>
+      <a href="caja.html" class="nav-encargado__enlace">Caja</a>
+      <a href="estadisticas.html" class="nav-encargado__enlace" aria-current="page">Estadísticas</a>
+      <a href="usuarios.html" class="nav-encargado__enlace">Usuarios</a>
+    </nav>
   </header>
 
   <main class="contenedor">

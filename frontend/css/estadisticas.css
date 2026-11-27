@@ -20,10 +20,12 @@
    Bien distintos entre sí, y con el valor escrito al lado de la
    barra: el color solo no alcanza (daltonismo). */
 :root {
-  --est-efectivo: var(--color-primario, #3d6570);
+  /* (26/11) Efectivo en vino y transferencia en mostaza: los dos
+     colores de la paleta nueva, bien distintos entre sí */
+  --est-efectivo: var(--color-primario, #7a1f3d);
   --est-transferencia: #c58b2a;
-  --est-plato: var(--color-primario, #3d6570);
-  --est-pista: #e8ecef;
+  --est-plato: var(--color-primario, #7a1f3d);
+  --est-pista: #f1e7da;   /* crema oscuro (antes gris frío) */
 }
 
 /* ---------- Filtros ---------- */
@@ -194,4 +196,104 @@
   .est-barra__etiqueta {
     grid-column: auto;
   }
+}
+
+/* =========================================================
+   MEJORAS VISUALES (26/11)
+   Solo aspecto: no cambia ninguna clase ni id que use
+   estadisticas.js.
+   ========================================================= */
+
+/* "Agrupar" y "Categoría" en la MISMA línea que su título:
+   la etiqueta al lado del combo (antes quedaba arriba y el combo
+   parecía flotar lejos del título) */
+.est-titulo-fila {
+  align-items: center;
+}
+
+.est-campo-chico {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.est-campo-chico label {
+  margin: 0;
+  white-space: nowrap;
+  color: var(--color-texto-suave, #6b5a4e);
+}
+
+.est-campo-chico select {
+  width: auto;
+  min-width: 150px;
+}
+
+/* "Ver tabla de ingresos": ahora parece algo que se puede tocar.
+   Con display:flex el navegador saca el triángulo de <summary>,
+   así que lo dibujamos nosotros: ▸ cerrado, ▾ abierto. */
+.est-seccion .caja-detalles summary {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 16px;
+  color: var(--color-primario, #7a1f3d);
+  background: #fff;
+  border: 1.5px solid var(--color-borde-fuerte, #d4bfa6);
+  border-radius: var(--radio, 12px);
+  list-style: none;
+}
+
+.est-seccion .caja-detalles summary::-webkit-details-marker {
+  display: none;
+}
+
+.est-seccion .caja-detalles summary::before {
+  content: "▸";
+}
+
+.est-seccion .caja-detalles[open] summary::before {
+  content: "▾";
+}
+
+@media (hover: hover) {
+  .est-seccion .caja-detalles summary:hover {
+    background: #fbf1e4;
+    border-color: var(--color-primario, #7a1f3d);
+  }
+}
+
+/* Botones "Exportar (CSV)": con una flecha de descarga delante */
+.est-seccion > .boton--secundario::before {
+  content: "⬇";
+}
+
+/* Separación entre secciones: una línea suave */
+.est-seccion + .est-seccion {
+  padding-top: var(--espacio, 16px);
+  border-top: 1px solid var(--color-borde, #e8dccb);
+}
+
+/* Barras con las puntas redondeadas */
+.est-barra__pista {
+  height: 24px;
+  border-radius: 999px;
+}
+
+/* Ranking: el puesto en vino y en negrita.
+   Los 3 primeros, en una medalla amarilla. */
+.est-grafico--ranking .est-barra__nombre::before {
+  display: inline-block;
+  min-width: 1.6em;
+  font-weight: 700;
+  color: var(--color-primario, #7a1f3d);
+}
+
+.est-grafico--ranking .est-barra:nth-child(-n+3) .est-barra__nombre::before {
+  content: counter(puesto);
+  margin-right: 6px;
+  text-align: center;
+  color: #3b2a00;
+  background: var(--logo-amarillo, #edcc3b);
+  border-radius: 999px;
 }
