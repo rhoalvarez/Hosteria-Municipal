@@ -64,15 +64,20 @@ app.get("/api/health", (req, res) => {
 });
 
 // Rutas
+// IMPORTANTE: las rutas con prefijo PROPIO (/api/auth, /api/usuarios,
+// /api/avisos) van ANTES de las que se montan en "/api" a secas.
+// Express revisa en orden, y un router montado en "/api" que tenga un
+// router.use(roles(...)) suelto controla el rol de TODO lo que empieza
+// con /api. Si avisos quedaba después, al MOZO le daba 403 (26/11).
 app.use("/api/auth", authRoutes);
 app.use("/api/usuarios", usuariosRoutes);
+// Avisos para el mozo (RF-PED-05): pedidos listos para llevar
+app.use("/api/avisos", avisosRoutes);
 app.use("/api", catalogRoutes);
 app.use("/api", restaurantRoutes);
 app.use("/api/caja", cashRoutes);
 // Estadísticas (Inc. 3): ranking de platos e ingresos, solo ENCARGADO
 app.use("/api/estadisticas", statsRoutes);
-// Avisos para el mozo (RF-PED-05): pedidos listos para llevar
-app.use("/api/avisos", avisosRoutes);
 app.use("/api", lodgingRoutes);
 
 // Documentación Swagger
