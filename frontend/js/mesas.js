@@ -18,7 +18,8 @@
      - ocupada o cuenta pedida + ENCARGADO → botón "Anular" en cada
        plato ya enviado (RF-PED-06): motivo obligatorio y dos toques.
    Además, arriba de la grilla: pedidos LISTOS para llevar (RF-PED-05),
-   con vibración en el celular cuando llega uno nuevo.
+   con vibración en el celular cuando llega uno nuevo. SOLO para el
+   MOZO (decidido 26/11): el encargado no lleva platos a las mesas.
    Los datos SIEMPRE se piden a api.js, nunca con fetch directo.
    ========================================================= */
 
@@ -183,6 +184,13 @@ function iniciarPantalla() {
     document.getElementById('enlace-usuarios').hidden = false;
   }
 
+  // Pedidos listos (RF-PED-05): son para el MOZO, que lleva los platos.
+  // Al encargado no le mostramos la leyenda "Pedido listo" (la franja
+  // y las etiquetas no le aparecen porque no se piden: ver cargarMesas).
+  // El if (leyendaListo) evita un error si el HTML no tiene ese id.
+  const leyendaListo = document.getElementById('leyenda-listo');
+  if (leyendaListo && esEncargado) leyendaListo.hidden = true;
+
   // UN solo "escuchador" para toda la grilla (delegación de eventos)
   grillaMesas.addEventListener('click', alTocarMesa);
 
@@ -274,9 +282,15 @@ async function cargarMesas() {
   try {
     // Las mesas y los pedidos listos A LA VEZ. Si los listos fallan,
     // las mesas se muestran igual (por eso el .catch)
+    // Los pedidos listos son SOLO para el mozo (decidido 26/11): al
+    // encargado no se los pedimos al servidor. Promise.resolve([]) es
+    // "una lista vacía ya lista", así el resto del código no cambia:
+    // sin pedidos listos no se dibuja la franja ni las etiquetas.
     const [mesas, listos] = await Promise.all([
       obtenerMesas(),
-      obtenerPedidosListos().catch(() => null)
+      esEncargado
+        ? Promise.resolve([])
+        : obtenerPedidosListos().catch(() => null)
     ]);
     mesasActuales = mesas;
     if (listos !== null) pedidosListos = listos;

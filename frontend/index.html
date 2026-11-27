@@ -4,17 +4,23 @@
   <meta charset="UTF-8">
   <!-- Sin esta línea, el celular muestra la página como si fuera de PC, chiquita -->
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#3D6570">
+  <!-- Color de la barra del navegador en el celular: el vino del sistema -->
+  <meta name="theme-color" content="#7A1F3D">
   <title>Ingresar · Restaurante Portal de la Luna</title>
   <link rel="stylesheet" href="css/estilos.css">
-  <!-- Ícono vacío: evita el error 404 de favicon.ico en la consola.
-       Cuando tengamos el logo, se cambia por assets/logo.png -->
-  <link rel="icon" href="data:,">
+  <!-- Ícono de la pestaña: el logo de la Municipalidad -->
+  <link rel="icon" href="assets/logo.png">
 </head>
 <body class="pagina-login">
 
   <main class="login">
     <div class="login__marca">
+      <!-- Logo de la Municipalidad de San José (mejoras visuales 26/11).
+           Está en frontend/assets/: funciona sin internet.
+           width y height: el navegador reserva el lugar antes de que
+           cargue la imagen, así la página no "salta". -->
+      <img class="login__logo" src="assets/logo.png" width="640" height="391"
+           alt="Logo de la Municipalidad de San José">
       <h1>Portal de la Luna</h1>
       <p>Sistema del restaurante</p>
     </div>
